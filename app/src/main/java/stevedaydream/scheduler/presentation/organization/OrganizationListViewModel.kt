@@ -4,18 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+import java.util.*
 import javax.inject.Inject
-import java.util.Date // ✅ 新增這個 import
-
 
 @HiltViewModel
 class OrganizationListViewModel @Inject constructor(
@@ -29,55 +26,56 @@ class OrganizationListViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    // 🔴 移除了整個 init { ... } 區塊
+    // 🔽🔽🔽 新增這兩行 🔽🔽🔽
+    private val _currentUser = MutableStateFlow<User?>(null)
+    val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
-    // 🟡 將 private fun loadOrganizations() 改為 fun loadOrganizations()
     fun loadOrganizations() {
         viewModelScope.launch {
             val currentUid = auth.currentUser?.uid
-            println("🔍 Current user UID: $currentUid") // ✅ 加入此行
+            println("🔍 Current user UID: $currentUid")
 
             currentUid?.let { ownerId ->
-                println("🔍 Querying organizations for ownerId: $ownerId") // ✅ 加入此行
+                // ✅ 取得使用者詳細資料
+                viewModelScope.launch {
+                    repository.observeUser(ownerId).collect { user ->
+                        _currentUser.value = user
+                    }
+                }
+
+                println("🔍 Querying organizations for ownerId: $ownerId")
                 repository.observeOrganizationsByOwner(ownerId).collect { orgList ->
-                    println("🔍 Received ${orgList.size} organizations") // ✅ 加入此行
+                    println("🔍 Received ${orgList.size} organizations")
                     _organizations.value = orgList
                 }
             } ?: run {
-                println("❌ No user logged in") // ✅ 加入此行
+                println("❌ No user logged in")
             }
         }
     }
-    fun refresh() {
-        // 防止使用者在刷新過程中重複觸發
-        if (isRefreshing.value) return
 
+    fun refresh() {
+        if (isRefreshing.value) return
         viewModelScope.launch {
             _isRefreshing.value = true
-            // 記錄開始執行的時間
             val startTime = System.currentTimeMillis()
             try {
                 auth.currentUser?.uid?.let { ownerId ->
                     repository.refreshOrganizations(ownerId).onFailure { error ->
-                        // 處理可能發生的錯誤
                         println("Refresh failed: ${error.localizedMessage}")
                     }
                 }
             } finally {
-                // 計算實際花費的時間
                 val duration = System.currentTimeMillis() - startTime
-
-                // 如果花費時間少於 500 毫秒，就等待剩餘的時間
-                // 這能確保動畫至少會顯示半秒鐘
                 if (duration < 500L) {
                     kotlinx.coroutines.delay(500L - duration)
                 }
-
-                // 最後，結束刷新動畫
                 _isRefreshing.value = false
             }
         }
     }
+
     fun createOrganization(orgName: String) {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
@@ -86,20 +84,18 @@ class OrganizationListViewModel @Inject constructor(
             val newOrg = Organization(
                 orgName = orgName,
                 ownerId = currentUser.uid,
-                createdAt = Date(), // ⬅️ 修正 #1: 將 System.currentTimeMillis() 改為 Date()
+                createdAt = Date(),
                 plan = "free"
             )
 
-            // 準備創建者的使用者物件
             val adminUser = User(
                 id = currentUser.uid,
                 email = currentUser.email ?: "",
                 name = currentUser.displayName ?: "管理員",
                 role = "org_admin",
-                joinedAt = Date() // ⬅️ 修正 #2: 將 System.currentTimeMillis() 改為 Date()
+                joinedAt = Date()
             )
 
-            // 呼叫 repository 並處理回傳的 Result
             repository.createOrganization(newOrg, adminUser)
                 .onSuccess { newOrgId ->
                     println("Successfully created organization with ID: $newOrgId")
@@ -109,17 +105,16 @@ class OrganizationListViewModel @Inject constructor(
                 }
         }
     }
-    // ✅ 新增一個 SharedFlow 來處理單次事件，例如導航
+
     private val _logoutEvent = MutableSharedFlow<Unit>()
     val logoutEvent = _logoutEvent.asSharedFlow()
-    // ✅ 新增登出函式
+
     fun logout() {
         viewModelScope.launch {
-            // 1. 清除本地所有資料
-            repository.clearAllLocalData()
-            // 2. 從 Firebase 登出
+            withContext(Dispatchers.IO) {
+                repository.clearAllLocalData()
+            }
             auth.signOut()
-            // 3. 發送登出成功事件，通知 UI 進行導航
             _logoutEvent.emit(Unit)
         }
     }

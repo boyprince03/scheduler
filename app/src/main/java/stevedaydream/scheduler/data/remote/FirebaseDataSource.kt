@@ -240,4 +240,12 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    // ==================== 管理員 ====================
+    fun observeAdminStatus(userId: String): Flow<Boolean> {
+        return firestore.collection("admins").document(userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.exists() && snapshot.getString("role") == "superuser"
+            }
+    }
 }

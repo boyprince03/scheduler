@@ -43,7 +43,7 @@ data class User(
     val orgId: String = "",
     val email: String = "",
     val name: String = "",
-    val role: String = "member", // org_admin, member
+    val role: String = "member", // ✅ 修改這裡 -> org_admin, member, superuser
     val joinedAt: Date = Date() // ✅ 2. 將 Long 改為 Date
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(

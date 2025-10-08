@@ -77,9 +77,30 @@ class SchedulerRepositoryImpl @Inject constructor(
         return database.userDao().getUsersByOrg(orgId)
     }
 
+    // 🔽🔽🔽 修改這個函式 🔽🔽🔽
     override fun observeUser(userId: String): Flow<User?> {
-        return database.userDao().getUser(userId)
+        val localUserFlow = database.userDao().getUser(userId)
+        val adminStatusFlow = observeAdminStatus(userId)
+
+        // 使用 combine 結合兩個 Flow
+        return combine(localUserFlow, adminStatusFlow) { user, isSuperuser ->
+            if (isSuperuser && user != null) {
+                // 如果是 Superuser，就覆寫其角色
+                user.copy(role = "superuser")
+            } else {
+                // 否則，回傳原始的使用者資料
+                user
+            }
+        }
     }
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
+    // 🔽🔽🔽 新增這個函式 🔽🔽🔽
+    override fun observeAdminStatus(userId: String): Flow<Boolean> {
+        // 直接從遠端監聽，這個狀態不需要快取
+        return remoteDataSource.observeAdminStatus(userId)
+    }
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     // ==================== 群組 ====================
     override suspend fun createGroup(orgId: String, group: Group): Result<String> {

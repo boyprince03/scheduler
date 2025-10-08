@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Logout // ✅ 引入圖示
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
@@ -76,16 +77,23 @@ fun OrganizationListScreen(
         )
     }
 
+    // 假設 আপনি從 ViewModel 獲取了當前使用者的資訊
+    val currentUser by viewModel.currentUser.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("我的組織") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                // ✅ 在 TopAppBar 加入 actions
                 actions = {
+                    // ✅ 只有 Superuser 能看到這個按鈕
+                    if (currentUser?.role == "superuser") {
+                        IconButton(onClick = { /* 進入管理後台 */ }) {
+                            Icon(
+                                imageVector = Icons.Default.AdminPanelSettings,
+                                contentDescription = "管理後台"
+                            )
+                        }
+                    }
                     IconButton(onClick = { showLogoutDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Logout,

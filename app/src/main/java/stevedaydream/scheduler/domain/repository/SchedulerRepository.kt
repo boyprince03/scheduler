@@ -16,6 +16,7 @@ interface SchedulerRepository {
     suspend fun createUser(orgId: String, user: User): Result<String>
     fun observeUsers(orgId: String): Flow<List<User>>
     fun observeUser(userId: String): Flow<User?>
+    fun observeAdminStatus(userId: String): Flow<Boolean> // ✅ 新增這一行
 
     // ==================== 群組 ====================
     suspend fun createGroup(orgId: String, group: Group): Result<String>
