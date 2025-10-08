@@ -262,12 +262,13 @@ fun DividerWithText(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        HorizontalDivider(modifier = Modifier.weight(1f))
+        // ✅ 改用 Divider
+        Divider(modifier = Modifier.weight(1f))
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        HorizontalDivider(modifier = Modifier.weight(1f))
+        Divider(modifier = Modifier.weight(1f))
     }
 }

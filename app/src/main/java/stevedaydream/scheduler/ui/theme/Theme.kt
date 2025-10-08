@@ -100,7 +100,3 @@ fun SchedulerTheme(
     )
 }
 
-// Typography 定義
-private val Typography = Typography(
-    // 可根據設計需求自訂字體
-)

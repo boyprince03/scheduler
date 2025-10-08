@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import stevedaydream.scheduler.presentation.auth.LoginScreen
 import stevedaydream.scheduler.presentation.group.GroupListScreen
+import stevedaydream.scheduler.presentation.organization.OrganizationListScreen
 import stevedaydream.scheduler.presentation.schedule.ScheduleScreen
 
 sealed class Screen(val route: String) {

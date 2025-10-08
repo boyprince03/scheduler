@@ -73,11 +73,15 @@ class ScheduleViewModel @Inject constructor(
     private fun renewLease() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
-            repository.renewSchedulerLease(
-                orgId = currentOrgId,
-                groupId = currentGroupId,
-                userId = currentUser.uid
-            )
+            // ✅ 使用安全調用
+            val expiresAt = _group.value?.schedulerLeaseExpiresAt
+            if (expiresAt != null && System.currentTimeMillis() < expiresAt) {
+                repository.renewSchedulerLease(
+                    orgId = currentOrgId,
+                    groupId = currentGroupId,
+                    userId = currentUser.uid
+                )
+            }
         }
     }
 }
