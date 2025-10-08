@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package stevedaydream.scheduler.presentation.common
 
 import androidx.compose.foundation.layout.*

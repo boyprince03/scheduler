@@ -39,7 +39,8 @@ class ScheduleViewModel @Inject constructor(
                 _group.value = group
 
                 // 自動續約邏輯
-                if (group?.schedulerId == auth.currentUser?.uid && group.isSchedulerActive()) {
+                // ✅ 修復:兩處都使用安全調用
+                if (group?.schedulerId == auth.currentUser?.uid && group?.isSchedulerActive() == true) {
                     renewLease()
                 }
             }
