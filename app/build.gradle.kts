@@ -77,6 +77,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    implementation("androidx.compose.material:material:1.6.8") // 撰寫時的穩定版本
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")

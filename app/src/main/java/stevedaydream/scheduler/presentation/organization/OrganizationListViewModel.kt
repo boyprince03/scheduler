@@ -27,13 +27,9 @@ class OrganizationListViewModel @Inject constructor(
 
     private fun loadOrganizations() {
         viewModelScope.launch {
-            // 注意:這裡需要根據當前使用者查詢所屬組織
-            // 實際實作需要在 Firestore 中建立索引或使用不同的查詢策略
-
-            // 暫時的示範:假設使用者 ID 就是組織 ID
-            auth.currentUser?.uid?.let { userId ->
-                repository.observeOrganization(userId).collect { org ->
-                    _organizations.value = listOfNotNull(org)
+            auth.currentUser?.uid?.let { ownerId ->
+                repository.observeOrganizationsByOwner(ownerId).collect { orgList ->
+                    _organizations.value = orgList
                 }
             }
         }
@@ -43,6 +39,7 @@ class OrganizationListViewModel @Inject constructor(
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
 
+            // 準備要建立的組織物件
             val newOrg = Organization(
                 orgName = orgName,
                 ownerId = currentUser.uid,
@@ -50,7 +47,18 @@ class OrganizationListViewModel @Inject constructor(
                 plan = "free"
             )
 
+            // 呼叫 repository 並處理回傳的 Result
             repository.createOrganization(newOrg)
+                .onSuccess { newOrgId ->
+                    // 成功時可以執行的操作，例如記錄日誌
+                    // 在這裡我們不需要做特別的事，因為 Flow 會自動更新列表
+                    println("Successfully created organization with ID: $newOrgId")
+                }
+                .onFailure { error ->
+                    // 失敗時執行的操作，例如印出錯誤訊息
+                    // 之後您可以在這裡加入顯示錯誤訊息給使用者的 UI 邏輯
+                    println("Failed to create organization: ${error.localizedMessage}")
+                }
         }
     }
 }

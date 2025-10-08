@@ -7,6 +7,8 @@ interface SchedulerRepository {
     // ==================== 組織 ====================
     suspend fun createOrganization(org: Organization): Result<String>
     fun observeOrganization(orgId: String): Flow<Organization?>
+    fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> // <-- 新增這一行
+
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String>

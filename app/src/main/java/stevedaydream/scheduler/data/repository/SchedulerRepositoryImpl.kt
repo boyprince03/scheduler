@@ -33,6 +33,20 @@ class SchedulerRepositoryImpl @Inject constructor(
         // 返回本地資料
         return database.organizationDao().getOrganization(orgId)
     }
+    override fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> {
+        externalScope.launch {
+            remoteDataSource.observeOrganizationsByOwner(ownerId)
+                .collect { remoteOrgs ->
+                    // 為了同步，我們先刪除這位使用者擁有的舊資料
+                    database.organizationDao().deleteOrganizationsByOwner(ownerId)
+                    // 然後插入從 Firebase 拿到的最新資料
+                    database.organizationDao().insertOrganizations(remoteOrgs)
+                }
+        }
+        // UI 將會從本地資料庫讀取資料，確保資料流一致
+        return database.organizationDao().getOrganizationsByOwner(ownerId)
+    }
+
 
     // ==================== 使用者 ====================
     override suspend fun createUser(orgId: String, user: User): Result<String> {

@@ -34,6 +34,16 @@ class FirebaseDataSource @Inject constructor(
                 } else null
             }
     }
+    fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> {
+        return firestore.collection("organizations")
+            .whereEqualTo("ownerId", ownerId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(Organization::class.java)?.copy(id = it.id)
+                }
+            }
+    }
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String> = runCatching {

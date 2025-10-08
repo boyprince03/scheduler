@@ -26,7 +26,8 @@ sealed class Screen(val route: String) {
 @Composable
 fun NavigationGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Login.route
+    startDestination: String = Screen.Login.route,
+    onGoogleSignInClick: () -> Unit = {} // 这个参数已经存在，很好
 ) {
     NavHost(
         navController = navController,
@@ -38,7 +39,8 @@ fun NavigationGraph(
                     navController.navigate(Screen.OrganizationList.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
-                }
+                },
+                onGoogleSignInClick = onGoogleSignInClick // <-- 新增这一行，将参数传递下去
             )
         }
 

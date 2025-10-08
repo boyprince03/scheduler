@@ -51,6 +51,17 @@ interface OrganizationDao {
     @Query("SELECT * FROM organizations WHERE id = :orgId")
     fun getOrganization(orgId: String): Flow<Organization?>
 
+    // 🔽🔽🔽 在下方加入這三個函式 🔽🔽🔽
+    @Query("SELECT * FROM organizations WHERE ownerId = :ownerId")
+    fun getOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrganizations(organizations: List<Organization>)
+
+    @Query("DELETE FROM organizations WHERE ownerId = :ownerId")
+    suspend fun deleteOrganizationsByOwner(ownerId: String)
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrganization(org: Organization)
 

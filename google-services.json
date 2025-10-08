@@ -51,6 +51,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "303515436841-do0prs71vljksa8s6ppho6ieksl0rrdp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "stevedaydream.scheduler",
+            "certificate_hash": "3ffada30ce2b7d75094a5fe8182f341e5f8950cd"
+          }
+        },
+        {
           "client_id": "303515436841-dg541bkfnkrdqip1rvs9tp2fnqhm929j.apps.googleusercontent.com",
           "client_type": 3
         }
