@@ -90,15 +90,26 @@ data class ShiftType(
     val shortCode: String = "",
     val startTime: String = "",
     val endTime: String = "",
-    val color: String = "#4A90E2"
+    val color: String = "#4A90E2",
+    // 🔽🔽🔽 新增欄位 🔽🔽🔽
+    val groupId: String? = null,      // 綁定特定群組 ID，null 表示適用於整個組織
+    val isTemplate: Boolean = false, // true 表示這是個範本
+    val templateId: String? = null,  // 如果是從範本複製的，記錄來源 ID
+    val createdBy: String? = null    // 記錄建立者的 UID
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
 ) {
-    fun toFirestoreMap(): Map<String, Any> = mapOf(
-        "name" to name,
-        "shortCode" to shortCode,
-        "startTime" to startTime,
-        "endTime" to endTime,
-        "color" to color
-    )
+    fun toFirestoreMap(): Map<String, Any> = buildMap {
+        put("orgId", orgId)
+        put("name", name)
+        put("shortCode", shortCode)
+        put("startTime", startTime)
+        put("endTime", endTime)
+        put("color", color)
+        groupId?.let { put("groupId", it) }
+        put("isTemplate", isTemplate)
+        templateId?.let { put("templateId", it) }
+        createdBy?.let { put("createdBy", it) }
+    }
 }
 
 // ==================== 請求 ====================
@@ -131,19 +142,33 @@ data class SchedulingRule(
     @PrimaryKey val id: String = "",
     val orgId: String = "",
     val ruleName: String = "",
+    val description: String = "", // ✅ 新增規則描述
     val ruleType: String = "", // hard, soft
     val penaltyScore: Int = 0,
     val isEnabled: Boolean = true,
-    val isPremiumFeature: Boolean = false
+    val isPremiumFeature: Boolean = false,
+    val parameters: Map<String, String> = emptyMap(),
+    val isTemplate: Boolean = false, // true 表示這是個範本，存放在頂層 ruleTemplates
+    val templateId: String? = null,  // 如果是從範本複製的，記錄範本來源 ID
+    val createdBy: String? = null, // 記錄建立者的 UID
+    val groupId: String? = null      // 綁定特定群組 ID，null 表示適用於整個組織
 ) {
-    fun toFirestoreMap(): Map<String, Any> = mapOf(
-        "ruleName" to ruleName,
-        "ruleType" to ruleType,
-        "penaltyScore" to penaltyScore,
-        "isEnabled" to isEnabled,
-        "isPremiumFeature" to isPremiumFeature
-    )
+    fun toFirestoreMap(): Map<String, Any> = buildMap {
+        put("orgId", orgId)
+        put("ruleName", ruleName)
+        put("description", description)
+        put("ruleType", ruleType)
+        put("penaltyScore", penaltyScore)
+        put("isEnabled", isEnabled)
+        put("isPremiumFeature", isPremiumFeature)
+        put("parameters", parameters)
+        put("isTemplate", isTemplate)
+        templateId?.let { put("templateId", it) }
+        createdBy?.let { put("createdBy", it) }
+        groupId?.let { put("groupId", it) }
+    }
 }
+
 
 // ==================== 班表 ====================
 @Entity(tableName = "schedules")
@@ -153,19 +178,18 @@ data class Schedule(
     val groupId: String = "",
     val month: String = "", // YYYY-MM
     val status: String = "draft", // draft, published
-    val generatedAt: Date = Date(), // ✅ 2. 將 Long 改為 Date
+    val generatedAt: Date = Date(),
     val totalScore: Int = 0,
     val violatedRules: List<String> = emptyList()
 ) {
+    // ✅ 修改這裡
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "groupId" to groupId,
         "month" to month,
         "status" to status,
-        "generatedAt" to generatedAt, // ✅ 3. 直接傳遞 Date 物件
-        "summary" to mapOf(
-            "totalScore" to totalScore,
-            "violatedRules" to violatedRules
-        )
+        "generatedAt" to generatedAt,
+        "totalScore" to totalScore,       // 直接作為頂層欄位
+        "violatedRules" to violatedRules  // 直接作為頂層欄位
     )
 }
 

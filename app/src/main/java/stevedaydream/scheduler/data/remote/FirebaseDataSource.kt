@@ -17,8 +17,33 @@ class FirebaseDataSource @Inject constructor(
     private val auth: FirebaseAuth
 ) {
 
+    /**
+     * 產生一組預設的排班規則
+     */
+    private fun getDefaultSchedulingRules(): List<SchedulingRule> {
+        return listOf(
+            SchedulingRule(
+                ruleName = "連續上班不超過N天",
+                description = "避免員工因連續工作過多天而過勞。",
+                ruleType = "soft",
+                penaltyScore = -50,
+                isEnabled = true,
+                parameters = mapOf("maxDays" to "6") // 預設連續上班不超過 6 天
+            ),
+            SchedulingRule(
+                ruleName = "輪班間隔需大於N小時",
+                description = "確保員工在兩次輪班之間有足夠的休息時間。",
+                ruleType = "hard",
+                penaltyScore = -1000,
+                isEnabled = true,
+                parameters = mapOf("minHours" to "11") // 預設輪班間隔需大於 11 小時
+            )
+            // 未來可以在這裡新增更多預設規則
+        )
+    }
+
+
     // ==================== 組織 ====================
-    // ✅ 新增這個函式，取代舊的 createOrganization
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
         val userRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
@@ -27,8 +52,21 @@ class FirebaseDataSource @Inject constructor(
         val userWithOrgId = user.copy(orgId = orgRef.id)
 
         firestore.runBatch { batch ->
+            // 1. 建立組織
             batch.set(orgRef, orgWithId.toFirestoreMap())
+            // 2. 建立第一個使用者 (管理員)
             batch.set(userRef, userWithOrgId.toFirestoreMap())
+
+
+            // 3. 建立預設的排班規則
+            val rulesCollection = firestore.collection("organizations/${orgRef.id}/schedulingRules")
+            getDefaultSchedulingRules().forEach { rule ->
+                val ruleRef = rulesCollection.document()
+                // 我們不需要 id，因為 Firestore 會自動產生
+                batch.set(ruleRef, rule.toFirestoreMap())
+            }
+
+
         }.await()
 
         orgRef.id
@@ -164,9 +202,29 @@ class FirebaseDataSource @Inject constructor(
             .await()
     }
 
-    // ==================== 班別類型 ====================
-    fun observeShiftTypes(orgId: String): Flow<List<ShiftType>> {
+    // ==================== 班別類型 (Shift Types) ====================
+
+    // 🔽🔽🔽 新增以下所有方法 🔽🔽🔽
+
+    /**
+     * 監聽班別範本 (未來加值功能)
+     */
+    fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
+        return firestore.collection("shiftTypeTemplates")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(ShiftType::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    /**
+     * 監聽一個組織的班別，包含組織層級 + 特定群組層級
+     */
+    fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
         return firestore.collection("organizations/$orgId/shiftTypes")
+            .whereIn("groupId", listOf(null, groupId))
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull {
@@ -174,6 +232,44 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+
+    /**
+     * 為群組新增自訂班別
+     */
+    suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/shiftTypes").document()
+        val newShiftType = shiftType.copy(
+            id = docRef.id,
+            orgId = orgId,
+            groupId = groupId,
+            isTemplate = false,
+            createdBy = auth.currentUser?.uid
+        )
+        docRef.set(newShiftType.toFirestoreMap()).await()
+        docRef.id
+    }
+
+    /**
+     * 更新組織內的班別
+     */
+    suspend fun updateShiftType(orgId: String, shiftTypeId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/shiftTypes")
+            .document(shiftTypeId)
+            .update(updates)
+            .await()
+    }
+
+    /**
+     * 刪除組織內的班別
+     */
+    suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/shiftTypes")
+            .document(shiftTypeId)
+            .delete()
+            .await()
+    }
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
     // ==================== 請求 ====================
     suspend fun createRequest(orgId: String, request: Request): Result<String> = runCatching {
@@ -192,17 +288,108 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    // ==================== 排班規則 (Rule Templates for Superuser) ====================
 
-    // ==================== 排班規則 ====================
-    fun observeSchedulingRules(orgId: String): Flow<List<SchedulingRule>> {
-        return firestore.collection("organizations/$orgId/schedulingRules")
+    fun observeRuleTemplates(): Flow<List<SchedulingRule>> {
+        return firestore.collection("ruleTemplates")
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull {
-                    it.toObject(SchedulingRule::class.java)?.copy(id = it.id, orgId = orgId)
+                    it.toObject(SchedulingRule::class.java)?.copy(id = it.id)
                 }
             }
     }
+
+    suspend fun addRuleTemplate(rule: SchedulingRule): Result<String> = runCatching {
+        val docRef = firestore.collection("ruleTemplates").document()
+        // 確保 isTemplate 標記為 true
+        val template = rule.copy(id = docRef.id, isTemplate = true, orgId = "", groupId = null)
+        docRef.set(template.toFirestoreMap()).await()
+        docRef.id
+    }
+
+    suspend fun updateRuleTemplate(ruleId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
+        firestore.collection("ruleTemplates").document(ruleId).update(updates).await()
+    }
+
+    suspend fun deleteRuleTemplate(ruleId: String): Result<Unit> = runCatching {
+        firestore.collection("ruleTemplates").document(ruleId).delete().await()
+    }
+
+
+    // ==================== 排班規則 (Organization & Group Rules) ====================
+
+    /**
+     * 監聽一個組織內的所有規則，包含組織層級 + 特定群組層級
+     */
+    fun observeSchedulingRules(orgId: String, groupId: String): Flow<List<SchedulingRule>> {
+        return firestore.collection("organizations/$orgId/schedulingRules")
+            // 查詢條件: (groupId == null) OR (groupId == currentGroupId)
+            .whereIn("groupId", listOf(null, groupId))
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(SchedulingRule::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+    /**
+     * Org Admin 啟用一個範本規則到組織中 (複製)
+     */
+    suspend fun enableTemplateForRule(orgId: String, ruleTemplate: SchedulingRule): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
+        val newRule = ruleTemplate.copy(
+            id = docRef.id,
+            orgId = orgId,
+            isTemplate = false, // 這是範本的實例，不是範本本身
+            templateId = ruleTemplate.id, // 記錄來源
+            isEnabled = true,
+            groupId = null, // 組織層級規則
+            createdBy = auth.currentUser?.uid
+        )
+        docRef.set(newRule.toFirestoreMap()).await()
+        docRef.id
+    }
+
+    /**
+     * 排班者為群組新增自訂規則
+     */
+    suspend fun addCustomRuleForGroup(orgId: String, groupId: String, rule: SchedulingRule): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
+        val newRule = rule.copy(
+            id = docRef.id,
+            orgId = orgId,
+            groupId = groupId,
+            isTemplate = false,
+            templateId = null,
+            createdBy = auth.currentUser?.uid
+        )
+        docRef.set(newRule.toFirestoreMap()).await()
+        docRef.id
+    }
+
+    // ✅ 新增以下三個方法
+    suspend fun addRuleForOrg(orgId: String, rule: SchedulingRule): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
+        val ruleWithId = rule.copy(id = docRef.id, orgId = orgId)
+        docRef.set(ruleWithId.toFirestoreMap()).await()
+        docRef.id
+    }
+
+    suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/schedulingRules")
+            .document(ruleId)
+            .update(updates)
+            .await()
+    }
+
+    suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/schedulingRules")
+            .document(ruleId)
+            .delete()
+            .await()
+    }
+
 
     // ==================== 班表 ====================
     suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> = runCatching {

@@ -20,6 +20,7 @@ import stevedaydream.scheduler.data.repository.SchedulerRepositoryImpl
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -81,5 +82,10 @@ object AppModule {
         @ApplicationScope externalScope: CoroutineScope
     ): SchedulerRepository {
         return SchedulerRepositoryImpl(remoteDataSource, database, externalScope)
+    }
+    @Provides
+    @Singleton
+    fun provideScheduleGenerator(): ScheduleGenerator {
+        return ScheduleGenerator()
     }
 }

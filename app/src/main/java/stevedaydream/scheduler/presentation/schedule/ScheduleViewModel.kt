@@ -1,5 +1,8 @@
+// scheduler/presentation/schedule/ScheduleViewModel.kt
+
 package stevedaydream.scheduler.presentation.schedule
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
@@ -7,21 +10,29 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import stevedaydream.scheduler.data.model.Group
+import stevedaydream.scheduler.data.model.Request
+import stevedaydream.scheduler.data.model.SchedulingRule
+import stevedaydream.scheduler.data.model.ShiftType
+import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Inject
-import java.util.Date // ✅ 新增這個 import
+import java.util.Date
+import stevedaydream.scheduler.data.model.Schedule
+import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 
 @HiltViewModel
 class ScheduleViewModel @Inject constructor(
     private val repository: SchedulerRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val scheduleGenerator: ScheduleGenerator,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
-
+    // ✅ 2. 直接從 SavedStateHandle 獲取導航參數
+    val currentOrgId: String = savedStateHandle.get<String>("orgId")!!
+    val currentGroupId: String = savedStateHandle.get<String>("groupId")!!
     private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group.asStateFlow()
 
-    private var currentOrgId: String = ""
-    private var currentGroupId: String = ""
 
     val isScheduler: StateFlow<Boolean> = _group.map { group ->
         group?.schedulerId == auth.currentUser?.uid
@@ -31,19 +42,64 @@ class ScheduleViewModel @Inject constructor(
         group?.isSchedulerActive() == false
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    fun loadGroup(orgId: String, groupId: String) {
-        currentOrgId = orgId
-        currentGroupId = groupId
+    private val _users = MutableStateFlow<List<User>>(emptyList())
+    private val _shiftTypes = MutableStateFlow<List<ShiftType>>(emptyList())
+    private val _requests = MutableStateFlow<List<Request>>(emptyList())
+    private val _rules = MutableStateFlow<List<SchedulingRule>>(emptyList())
+    private val _schedules = MutableStateFlow<List<Schedule>>(emptyList())
+    val schedules: StateFlow<List<Schedule>> = _schedules.asStateFlow()
 
+    private val _isGenerating = MutableStateFlow(false)
+    val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
+
+    private val _generateSuccess = MutableSharedFlow<Unit>()
+    val generateSuccess = _generateSuccess.asSharedFlow()
+    // ✅ 3. 新增 init 區塊
+    init {
+        loadGroupData()
+    }
+    // ✅ 4. loadGroup 改名並設為 private
+    private fun loadGroupData() {
         viewModelScope.launch {
-            repository.observeGroup(groupId).collect { group ->
-                _group.value = group
-
-                // 自動續約邏輯
-                // ✅ 修復:兩處都使用安全調用
-                if (group?.schedulerId == auth.currentUser?.uid && group?.isSchedulerActive() == true) {
+            repository.observeGroup(currentGroupId).collect { groupData ->
+                _group.value = groupData
+                if (groupData?.schedulerId == auth.currentUser?.uid && groupData?.isSchedulerActive() == true) {
                     renewLease()
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.observeSchedules(currentOrgId, currentGroupId).collect { scheduleList ->
+                _schedules.value = scheduleList
+            }
+        }
+
+        viewModelScope.launch {
+            repository.observeGroup(currentGroupId).collect { group ->
+                group?.let {
+                    repository.observeUsers(currentOrgId).collect { allUsers ->
+                        _users.value = allUsers.filter { user -> user.id in it.memberIds }
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.observeShiftTypes(currentOrgId, currentGroupId).collect { types ->
+                _shiftTypes.value = types
+            }
+        }
+
+        viewModelScope.launch {
+            repository.observeRequests(currentOrgId).collect { reqs ->
+                _requests.value = reqs
+            }
+        }
+
+        viewModelScope.launch {
+            repository.observeSchedulingRules(currentOrgId, currentGroupId).collect { ruleList ->
+                _rules.value = ruleList
             }
         }
     }
@@ -51,18 +107,12 @@ class ScheduleViewModel @Inject constructor(
     fun claimScheduler() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
-
             repository.claimScheduler(
                 orgId = currentOrgId,
                 groupId = currentGroupId,
                 userId = currentUser.uid,
                 userName = currentUser.displayName ?: currentUser.email ?: "未命名使用者"
-            ).onSuccess { success ->
-                if (!success) {
-                    // 認領失敗,可能已有其他人認領
-                    // TODO: 顯示錯誤訊息
-                }
-            }
+            )
         }
     }
 
@@ -75,15 +125,38 @@ class ScheduleViewModel @Inject constructor(
     private fun renewLease() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
+            repository.renewSchedulerLease(
+                orgId = currentOrgId,
+                groupId = currentGroupId,
+                userId = currentUser.uid
+            )
+        }
+    }
 
-            val expiresAt = _group.value?.schedulerLeaseExpiresAt
-            // ⬇️ 修正 #3: 修改這裡的比較邏輯
-            if (expiresAt != null && Date().before(expiresAt)) {
-                repository.renewSchedulerLease(
+    fun generateSmartSchedule(month: String) {
+        viewModelScope.launch {
+            _isGenerating.value = true
+            try {
+                val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
-                    userId = currentUser.uid
+                    month = month,
+                    users = _users.value,
+                    shiftTypes = _shiftTypes.value,
+                    requests = _requests.value,
+                    rules = _rules.value.filter { it.isEnabled }
                 )
+
+                repository.createSchedule(currentOrgId, result.schedule)
+                result.assignments.forEach { assignment ->
+                    repository.createAssignment(currentOrgId, result.schedule.id, assignment)
+                }
+
+                _generateSuccess.emit(Unit)
+            } catch (e: Exception) {
+                println("生成失敗: ${e.message}")
+            } finally {
+                _isGenerating.value = false
             }
         }
     }

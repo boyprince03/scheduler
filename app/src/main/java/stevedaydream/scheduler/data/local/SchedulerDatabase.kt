@@ -119,8 +119,9 @@ interface GroupDao {
 
 @Dao
 interface ShiftTypeDao {
-    @Query("SELECT * FROM shift_types WHERE orgId = :orgId")
-    fun getShiftTypesByOrg(orgId: String): Flow<List<ShiftType>>
+    @Query("SELECT * FROM shift_types WHERE orgId = :orgId AND (groupId IS NULL OR groupId = :groupId)")
+    fun getShiftTypesByOrgAndGroup(orgId: String, groupId: String): Flow<List<ShiftType>>
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShiftTypes(types: List<ShiftType>)
@@ -146,8 +147,8 @@ interface RequestDao {
 
 @Dao
 interface SchedulingRuleDao {
-    @Query("SELECT * FROM scheduling_rules WHERE orgId = :orgId")
-    fun getRulesByOrg(orgId: String): Flow<List<SchedulingRule>>
+    @Query("SELECT * FROM scheduling_rules WHERE orgId = :orgId AND (groupId IS NULL OR groupId = :groupId)")
+    fun getRulesByOrgAndGroup(orgId: String, groupId: String): Flow<List<SchedulingRule>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRules(rules: List<SchedulingRule>)
@@ -197,7 +198,7 @@ interface AssignmentDao {
         Schedule::class,
         Assignment::class
     ],
-    version = 1,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

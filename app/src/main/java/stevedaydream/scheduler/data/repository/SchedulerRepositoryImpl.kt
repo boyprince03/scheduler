@@ -151,16 +151,34 @@ class SchedulerRepositoryImpl @Inject constructor(
     }
 
     // ==================== 班別類型 ====================
-    override fun observeShiftTypes(orgId: String): Flow<List<ShiftType>> {
+    // 🔽🔽🔽 替換掉舊的 observeShiftTypes 並新增其他方法 🔽🔽🔽
+    override fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
+        return remoteDataSource.observeShiftTypeTemplates()
+    }
+
+    override fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
         externalScope.launch {
-            remoteDataSource.observeShiftTypes(orgId)
+            remoteDataSource.observeShiftTypes(orgId, groupId)
                 .collect { types ->
-                    database.shiftTypeDao().deleteShiftTypesByOrg(orgId)
+                    database.shiftTypeDao().deleteShiftTypesByOrg(orgId) // 簡化處理
                     database.shiftTypeDao().insertShiftTypes(types)
                 }
         }
-        return database.shiftTypeDao().getShiftTypesByOrg(orgId)
+        return database.shiftTypeDao().getShiftTypesByOrgAndGroup(orgId, groupId)
     }
+
+    override suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> {
+        return remoteDataSource.addCustomShiftTypeForGroup(orgId, groupId, shiftType)
+    }
+
+    override suspend fun updateShiftType(orgId: String, shiftTypeId: String, updates: Map<String, Any>): Result<Unit> {
+        return remoteDataSource.updateShiftType(orgId, shiftTypeId, updates)
+    }
+
+    override suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit> {
+        return remoteDataSource.deleteShiftType(orgId, shiftTypeId)
+    }
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     // ==================== 請求 ====================
     override suspend fun createRequest(orgId: String, request: Request): Result<String> {
@@ -183,16 +201,57 @@ class SchedulerRepositoryImpl @Inject constructor(
     }
 
     // ==================== 排班規則 ====================
-    override fun observeSchedulingRules(orgId: String): Flow<List<SchedulingRule>> {
+
+    // --- Superuser: Rule Templates ---
+    override fun observeRuleTemplates(): Flow<List<SchedulingRule>> {
+        // 範本通常不需要本地快取，直接從遠端讀取
+        return remoteDataSource.observeRuleTemplates()
+    }
+
+    override suspend fun addRuleTemplate(rule: SchedulingRule): Result<String> {
+        return remoteDataSource.addRuleTemplate(rule)
+    }
+
+    override suspend fun updateRuleTemplate(ruleId: String, updates: Map<String, Any>): Result<Unit> {
+        return remoteDataSource.updateRuleTemplate(ruleId, updates)
+    }
+
+    override suspend fun deleteRuleTemplate(ruleId: String): Result<Unit> {
+        return remoteDataSource.deleteRuleTemplate(ruleId)
+    }
+
+    // --- Organization & Group Rules ---
+    override fun observeSchedulingRules(orgId: String, groupId: String): Flow<List<SchedulingRule>> {
         externalScope.launch {
-            remoteDataSource.observeSchedulingRules(orgId)
+            remoteDataSource.observeSchedulingRules(orgId, groupId)
                 .collect { rules ->
+                    // 為了簡化，我們先清除該組織的所有舊規則，再插入新的
+                    // 在更複雜的場景下，你可能需要更精細的更新邏輯
                     database.schedulingRuleDao().deleteRulesByOrg(orgId)
                     database.schedulingRuleDao().insertRules(rules)
                 }
         }
-        return database.schedulingRuleDao().getRulesByOrg(orgId)
+        // UI 依然從本地 Room 讀取
+        return database.schedulingRuleDao().getRulesByOrgAndGroup(orgId, groupId)
     }
+
+    override suspend fun enableTemplateForRule(orgId: String, ruleTemplate: SchedulingRule): Result<String> {
+        return remoteDataSource.enableTemplateForRule(orgId, ruleTemplate)
+    }
+
+    override suspend fun addCustomRuleForGroup(orgId: String, groupId: String, rule: SchedulingRule): Result<String> {
+        return remoteDataSource.addCustomRuleForGroup(orgId, groupId, rule)
+    }
+
+    override suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit> {
+        return remoteDataSource.updateRuleForOrg(orgId, ruleId, updates)
+    }
+
+    override suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit> {
+        return remoteDataSource.deleteRuleForOrg(orgId, ruleId)
+    }
+
+
 
     // ==================== 班表 ====================
     override suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> {

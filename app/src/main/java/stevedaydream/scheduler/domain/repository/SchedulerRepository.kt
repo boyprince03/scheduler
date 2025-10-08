@@ -30,7 +30,14 @@ interface SchedulerRepository {
     suspend fun releaseScheduler(orgId: String, groupId: String): Result<Unit>
 
     // ==================== 班別類型 ====================
-    fun observeShiftTypes(orgId: String): Flow<List<ShiftType>>
+    // 🔽🔽🔽 修改與新增 🔽🔽🔽
+    fun observeShiftTypeTemplates(): Flow<List<ShiftType>>
+    fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>>
+    suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String>
+    suspend fun updateShiftType(orgId: String, shiftTypeId: String, updates: Map<String, Any>): Result<Unit>
+    suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit>
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
     // ==================== 請求 ====================
     suspend fun createRequest(orgId: String, request: Request): Result<String>
@@ -38,7 +45,27 @@ interface SchedulerRepository {
     fun observeUserRequests(userId: String): Flow<List<Request>>
 
     // ==================== 排班規則 ====================
-    fun observeSchedulingRules(orgId: String): Flow<List<SchedulingRule>>
+    // 🔽🔽🔽 修改與新增 🔽🔽🔽
+    // Superuser: 管理規則範本
+    fun observeRuleTemplates(): Flow<List<SchedulingRule>>
+    suspend fun addRuleTemplate(rule: SchedulingRule): Result<String>
+    suspend fun updateRuleTemplate(ruleId: String, updates: Map<String, Any>): Result<Unit>
+    suspend fun deleteRuleTemplate(ruleId: String): Result<Unit>
+
+    // Org/Group: 讀取規則
+    fun observeSchedulingRules(orgId: String, groupId: String): Flow<List<SchedulingRule>>
+
+    // Org Admin: 從範本啟用規則
+    suspend fun enableTemplateForRule(orgId: String, ruleTemplate: SchedulingRule): Result<String>
+
+    // Scheduler: 新增自訂規則
+    suspend fun addCustomRuleForGroup(orgId: String, groupId: String, rule: SchedulingRule): Result<String>
+
+    // 通用: 更新與刪除組織內的規則
+    suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit>
+    suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit>
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
     // ==================== 班表 ====================
     suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String>
