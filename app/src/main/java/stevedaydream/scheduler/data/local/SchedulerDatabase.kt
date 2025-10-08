@@ -172,6 +172,8 @@ interface AssignmentDao {
 }
 
 // ==================== Database ====================
+// ... (其他程式碼)
+
 @Database(
     entities = [
         Organization::class,
@@ -196,4 +198,12 @@ abstract class SchedulerDatabase : RoomDatabase() {
     abstract fun schedulingRuleDao(): SchedulingRuleDao
     abstract fun scheduleDao(): ScheduleDao
     abstract fun assignmentDao(): AssignmentDao
+
+    // ✅ 新增這個函式
+    /**
+     * 清除資料庫中的所有表格資料
+     */
+    suspend fun clearAllData() {
+        clearAllTables()
+    }
 }

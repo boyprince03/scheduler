@@ -9,6 +9,7 @@ import kotlinx.coroutines.tasks.await
 import stevedaydream.scheduler.data.model.*
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.tasks.await // 確保有這個 import
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -17,11 +18,20 @@ class FirebaseDataSource @Inject constructor(
 ) {
 
     // ==================== 組織 ====================
-    suspend fun createOrganization(org: Organization): Result<String> = runCatching {
-        val docRef = firestore.collection("organizations").document()
-        val orgWithId = org.copy(id = docRef.id)
-        docRef.set(orgWithId.toFirestoreMap()).await()
-        docRef.id
+    // ✅ 新增這個函式，取代舊的 createOrganization
+    suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
+        val orgRef = firestore.collection("organizations").document()
+        val userRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
+
+        val orgWithId = org.copy(id = orgRef.id)
+        val userWithOrgId = user.copy(orgId = orgRef.id)
+
+        firestore.runBatch { batch ->
+            batch.set(orgRef, orgWithId.toFirestoreMap())
+            batch.set(userRef, userWithOrgId.toFirestoreMap())
+        }.await()
+
+        orgRef.id
     }
 
     fun observeOrganization(orgId: String): Flow<Organization?> {
@@ -43,6 +53,15 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(Organization::class.java)?.copy(id = it.id)
                 }
             }
+    }
+    suspend fun getOrganizationsByOwner(ownerId: String): List<Organization> {
+        val snapshot = firestore.collection("organizations")
+            .whereEqualTo("ownerId", ownerId)
+            .get()
+            .await()
+        return snapshot.documents.mapNotNull {
+            it.toObject(Organization::class.java)?.copy(id = it.id)
+        }
     }
 
     // ==================== 使用者 ====================

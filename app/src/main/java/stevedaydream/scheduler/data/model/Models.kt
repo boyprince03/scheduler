@@ -1,32 +1,37 @@
 package stevedaydream.scheduler.data.model
 
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 
 // ==================== 組織 ====================
+// ✅ 1. 新增一個專門用來對應 "features" map 的資料類別
+data class Features(
+    @get:PropertyName("advanced_rules") @set:PropertyName("advanced_rules") var advancedRules: Boolean = false,
+    @get:PropertyName("excel_export") @set:PropertyName("excel_export") var excelExport: Boolean = false,
+    @get:PropertyName("api_access") @set:PropertyName("api_access") var apiAccess: Boolean = false
+)
+
 @Entity(tableName = "organizations")
 data class Organization(
     @PrimaryKey val id: String = "",
     val orgName: String = "",
     val ownerId: String = "",
     val createdAt: Long = 0,
-    val plan: String = "free", // free, standard, premium
-    val advancedRules: Boolean = false,
-    val excelExport: Boolean = false,
-    val apiAccess: Boolean = false
+    val plan: String = "free",
+    // ✅ 2. 將原本三個獨立的布林值，改為一個 Features 物件
+    // @Embedded 會告訴 Room 資料庫如何儲存這個巢狀物件
+    @Embedded val features: Features = Features()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "orgName" to orgName,
         "ownerId" to ownerId,
         "createdAt" to Timestamp(createdAt / 1000, 0),
         "plan" to plan,
-        "features" to mapOf(
-            "advanced_rules" to advancedRules,
-            "excel_export" to excelExport,
-            "api_access" to apiAccess
-        )
+        // ✅ 3. 在轉換回 Firestore map 時，直接使用 features 物件
+        "features" to features
     )
 }
 

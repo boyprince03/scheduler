@@ -23,9 +23,12 @@ object TestDataGenerator {
             ownerId = ownerId,
             createdAt = System.currentTimeMillis(),
             plan = "free",
-            advancedRules = false,
-            excelExport = false,
-            apiAccess = false
+            // ✅ 修正：使用新的 Features 巢狀類別來傳入參數
+            features = Features(
+                advancedRules = false,
+                excelExport = false,
+                apiAccess = false
+            )
         )
     }
 

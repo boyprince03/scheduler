@@ -46,6 +46,7 @@ fun NavigationGraph(
 
         composable(Screen.OrganizationList.route) {
             OrganizationListScreen(
+                navController = navController, // ✅ 傳入 navController
                 onOrganizationClick = { orgId ->
                     navController.navigate(Screen.GroupList.createRoute(orgId))
                 }

@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import stevedaydream.scheduler.data.model.Organization
+import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Inject
 
@@ -21,11 +24,13 @@ class OrganizationListViewModel @Inject constructor(
     private val _organizations = MutableStateFlow<List<Organization>>(emptyList())
     val organizations: StateFlow<List<Organization>> = _organizations.asStateFlow()
 
-    init {
-        loadOrganizations()
-    }
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    private fun loadOrganizations() {
+    // 🔴 移除了整個 init { ... } 區塊
+
+    // 🟡 將 private fun loadOrganizations() 改為 fun loadOrganizations()
+    fun loadOrganizations() {
         viewModelScope.launch {
             auth.currentUser?.uid?.let { ownerId ->
                 repository.observeOrganizationsByOwner(ownerId).collect { orgList ->
@@ -34,7 +39,36 @@ class OrganizationListViewModel @Inject constructor(
             }
         }
     }
+    fun refresh() {
+        // 防止使用者在刷新過程中重複觸發
+        if (isRefreshing.value) return
 
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            // 記錄開始執行的時間
+            val startTime = System.currentTimeMillis()
+            try {
+                auth.currentUser?.uid?.let { ownerId ->
+                    repository.refreshOrganizations(ownerId).onFailure { error ->
+                        // 處理可能發生的錯誤
+                        println("Refresh failed: ${error.localizedMessage}")
+                    }
+                }
+            } finally {
+                // 計算實際花費的時間
+                val duration = System.currentTimeMillis() - startTime
+
+                // 如果花費時間少於 500 毫秒，就等待剩餘的時間
+                // 這能確保動畫至少會顯示半秒鐘
+                if (duration < 500L) {
+                    kotlinx.coroutines.delay(500L - duration)
+                }
+
+                // 最後，結束刷新動畫
+                _isRefreshing.value = false
+            }
+        }
+    }
     fun createOrganization(orgName: String) {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
@@ -47,18 +81,37 @@ class OrganizationListViewModel @Inject constructor(
                 plan = "free"
             )
 
+            // 準備創建者的使用者物件
+            val adminUser = User(
+                id = currentUser.uid, // 使用者的 ID 就是 Firebase Auth 的 UID
+                email = currentUser.email ?: "",
+                name = currentUser.displayName ?: "管理員",
+                role = "org_admin", // 身份是組織管理員
+                joinedAt = System.currentTimeMillis()
+            )
+
             // 呼叫 repository 並處理回傳的 Result
-            repository.createOrganization(newOrg)
+            repository.createOrganization(newOrg, adminUser)
                 .onSuccess { newOrgId ->
-                    // 成功時可以執行的操作，例如記錄日誌
-                    // 在這裡我們不需要做特別的事，因為 Flow 會自動更新列表
                     println("Successfully created organization with ID: $newOrgId")
                 }
                 .onFailure { error ->
-                    // 失敗時執行的操作，例如印出錯誤訊息
-                    // 之後您可以在這裡加入顯示錯誤訊息給使用者的 UI 邏輯
                     println("Failed to create organization: ${error.localizedMessage}")
                 }
+        }
+    }
+    // ✅ 新增一個 SharedFlow 來處理單次事件，例如導航
+    private val _logoutEvent = MutableSharedFlow<Unit>()
+    val logoutEvent = _logoutEvent.asSharedFlow()
+    // ✅ 新增登出函式
+    fun logout() {
+        viewModelScope.launch {
+            // 1. 清除本地所有資料
+            repository.clearAllLocalData()
+            // 2. 從 Firebase 登出
+            auth.signOut()
+            // 3. 發送登出成功事件，通知 UI 進行導航
+            _logoutEvent.emit(Unit)
         }
     }
 }

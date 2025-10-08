@@ -5,9 +5,11 @@ import stevedaydream.scheduler.data.model.*
 
 interface SchedulerRepository {
     // ==================== 組織 ====================
-    suspend fun createOrganization(org: Organization): Result<String>
+    // ✅ 修改參數，加入 user: User
+    suspend fun createOrganization(org: Organization, user: User): Result<String>
     fun observeOrganization(orgId: String): Flow<Organization?>
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> // <-- 新增這一行
+    suspend fun refreshOrganizations(ownerId: String): Result<Unit> // <-- 新增這一行
 
 
     // ==================== 使用者 ====================
@@ -45,4 +47,9 @@ interface SchedulerRepository {
     // ==================== 班表分配 ====================
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String>
     fun observeAssignments(scheduleId: String): Flow<List<Assignment>>
+    // ✅ 新增這個函式
+    /**
+     * 清除所有本地資料
+     */
+    suspend fun clearAllLocalData()
 }

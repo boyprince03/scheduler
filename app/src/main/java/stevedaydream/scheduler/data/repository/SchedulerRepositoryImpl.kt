@@ -10,6 +10,9 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
+
+
+
 @Singleton
 class SchedulerRepositoryImpl @Inject constructor(
     private val remoteDataSource: FirebaseDataSource,
@@ -18,8 +21,9 @@ class SchedulerRepositoryImpl @Inject constructor(
 ) : SchedulerRepository {
 
     // ==================== 組織 ====================
-    override suspend fun createOrganization(org: Organization): Result<String> {
-        return remoteDataSource.createOrganization(org)
+    override suspend fun createOrganization(org: Organization, user: User): Result<String> {
+        // 我們直接呼叫 FirebaseDataSource，讓它處理交易
+        return remoteDataSource.createOrganizationAndFirstUser(org, user)
     }
 
     override fun observeOrganization(orgId: String): Flow<Organization?> {
@@ -45,6 +49,13 @@ class SchedulerRepositoryImpl @Inject constructor(
         }
         // UI 將會從本地資料庫讀取資料，確保資料流一致
         return database.organizationDao().getOrganizationsByOwner(ownerId)
+    }
+    override suspend fun refreshOrganizations(ownerId: String): Result<Unit> = runCatching {
+        // 從遠端一次性獲取最新資料
+        val remoteOrgs = remoteDataSource.getOrganizationsByOwner(ownerId)
+        // 更新本地資料庫
+        database.organizationDao().deleteOrganizationsByOwner(ownerId)
+        database.organizationDao().insertOrganizations(remoteOrgs)
     }
 
 
@@ -203,5 +214,9 @@ class SchedulerRepositoryImpl @Inject constructor(
             }
         }
         return database.assignmentDao().getAssignmentsBySchedule(scheduleId)
+    }
+    // ✅ 新增這個函式的實作
+    override suspend fun clearAllLocalData() {
+        database.clearAllData()
     }
 }
