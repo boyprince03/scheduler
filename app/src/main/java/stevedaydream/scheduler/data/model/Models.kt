@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
+import java.util.Date // ✅ 1. 匯入 Date
 
 // ==================== 組織 ====================
 // ✅ 1. 新增一個專門用來對應 "features" map 的資料類別
@@ -19,7 +20,7 @@ data class Organization(
     @PrimaryKey val id: String = "",
     val orgName: String = "",
     val ownerId: String = "",
-    val createdAt: Long = 0,
+    val createdAt: Date = Date(), // ✅ 2. 將 Long 改為 Date
     val plan: String = "free",
     // ✅ 2. 將原本三個獨立的布林值，改為一個 Features 物件
     // @Embedded 會告訴 Room 資料庫如何儲存這個巢狀物件
@@ -28,7 +29,7 @@ data class Organization(
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "orgName" to orgName,
         "ownerId" to ownerId,
-        "createdAt" to Timestamp(createdAt / 1000, 0),
+        "createdAt" to createdAt, // ✅ 3. 直接傳遞 Date 物件
         "plan" to plan,
         // ✅ 3. 在轉換回 Firestore map 時，直接使用 features 物件
         "features" to features
@@ -43,13 +44,13 @@ data class User(
     val email: String = "",
     val name: String = "",
     val role: String = "member", // org_admin, member
-    val joinedAt: Long = 0
+    val joinedAt: Date = Date() // ✅ 2. 將 Long 改為 Date
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "email" to email,
         "name" to name,
         "role" to role,
-        "joinedAt" to Timestamp(joinedAt / 1000, 0)
+        "joinedAt" to joinedAt // ✅ 3. 直接傳遞 Date 物件
     )
 }
 
@@ -62,7 +63,7 @@ data class Group(
     val memberIds: List<String> = emptyList(),
     val schedulerId: String? = null,
     val schedulerName: String? = null,
-    val schedulerLeaseExpiresAt: Long? = null
+    val schedulerLeaseExpiresAt: Date? = null // ✅ 2. 將 Long? 改為 Date?
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
         put("groupName", groupName)
@@ -70,13 +71,13 @@ data class Group(
         schedulerId?.let { put("schedulerId", it) }
         schedulerName?.let { put("schedulerName", it) }
         schedulerLeaseExpiresAt?.let {
-            put("schedulerLeaseExpiresAt", Timestamp(it / 1000, 0))
+            put("schedulerLeaseExpiresAt", it) // ✅ 3. 直接傳遞 Date 物件
         }
     }
 
     fun isSchedulerActive(): Boolean {
         val expiresAt = schedulerLeaseExpiresAt ?: return false
-        return System.currentTimeMillis() < expiresAt
+        return Date().before(expiresAt) // ✅ 4. 使用 Date 的方法來比較
     }
 }
 
@@ -111,7 +112,7 @@ data class Request(
     val type: String = "", // leave, shift_preference
     val details: Map<String, Any> = emptyMap(),
     val status: String = "pending", // pending, approved, rejected, coordination_needed
-    val createdAt: Long = 0
+    val createdAt: Date = Date() // ✅ 2. 將 Long 改為 Date
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "userId" to userId,
@@ -120,7 +121,7 @@ data class Request(
         "type" to type,
         "details" to details,
         "status" to status,
-        "createdAt" to Timestamp(createdAt / 1000, 0)
+        "createdAt" to createdAt // ✅ 3. 直接傳遞 Date 物件
     )
 }
 
@@ -152,7 +153,7 @@ data class Schedule(
     val groupId: String = "",
     val month: String = "", // YYYY-MM
     val status: String = "draft", // draft, published
-    val generatedAt: Long = 0,
+    val generatedAt: Date = Date(), // ✅ 2. 將 Long 改為 Date
     val totalScore: Int = 0,
     val violatedRules: List<String> = emptyList()
 ) {
@@ -160,7 +161,7 @@ data class Schedule(
         "groupId" to groupId,
         "month" to month,
         "status" to status,
-        "generatedAt" to Timestamp(generatedAt / 1000, 0),
+        "generatedAt" to generatedAt, // ✅ 3. 直接傳遞 Date 物件
         "summary" to mapOf(
             "totalScore" to totalScore,
             "violatedRules" to violatedRules

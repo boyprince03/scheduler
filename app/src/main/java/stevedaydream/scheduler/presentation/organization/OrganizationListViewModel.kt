@@ -14,6 +14,8 @@ import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Inject
+import java.util.Date // ✅ 新增這個 import
+
 
 @HiltViewModel
 class OrganizationListViewModel @Inject constructor(
@@ -32,10 +34,17 @@ class OrganizationListViewModel @Inject constructor(
     // 🟡 將 private fun loadOrganizations() 改為 fun loadOrganizations()
     fun loadOrganizations() {
         viewModelScope.launch {
-            auth.currentUser?.uid?.let { ownerId ->
+            val currentUid = auth.currentUser?.uid
+            println("🔍 Current user UID: $currentUid") // ✅ 加入此行
+
+            currentUid?.let { ownerId ->
+                println("🔍 Querying organizations for ownerId: $ownerId") // ✅ 加入此行
                 repository.observeOrganizationsByOwner(ownerId).collect { orgList ->
+                    println("🔍 Received ${orgList.size} organizations") // ✅ 加入此行
                     _organizations.value = orgList
                 }
+            } ?: run {
+                println("❌ No user logged in") // ✅ 加入此行
             }
         }
     }
@@ -72,22 +81,22 @@ class OrganizationListViewModel @Inject constructor(
     fun createOrganization(orgName: String) {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
+            println("🔍 Creating org with ownerId: ${currentUser.uid}")
 
-            // 準備要建立的組織物件
             val newOrg = Organization(
                 orgName = orgName,
                 ownerId = currentUser.uid,
-                createdAt = System.currentTimeMillis(),
+                createdAt = Date(), // ⬅️ 修正 #1: 將 System.currentTimeMillis() 改為 Date()
                 plan = "free"
             )
 
             // 準備創建者的使用者物件
             val adminUser = User(
-                id = currentUser.uid, // 使用者的 ID 就是 Firebase Auth 的 UID
+                id = currentUser.uid,
                 email = currentUser.email ?: "",
                 name = currentUser.displayName ?: "管理員",
-                role = "org_admin", // 身份是組織管理員
-                joinedAt = System.currentTimeMillis()
+                role = "org_admin",
+                joinedAt = Date() // ⬅️ 修正 #2: 將 System.currentTimeMillis() 改為 Date()
             )
 
             // 呼叫 repository 並處理回傳的 Result

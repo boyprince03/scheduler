@@ -3,9 +3,21 @@ package stevedaydream.scheduler.data.local
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import stevedaydream.scheduler.data.model.*
+import java.util.Date // ✅ 1. 匯入 Date
 
 // ==================== Type Converters ====================
 class Converters {
+    // 🔽🔽🔽 在下方加入這兩個函式 🔽🔽🔽
+    @TypeConverter
+    fun fromTimestamp(value: Long?): Date? {
+        return value?.let { Date(it) }
+    }
+
+    @TypeConverter
+    fun dateToTimestamp(date: Date?): Long? {
+        return date?.time
+    }
+    // 🔼🔼🔼 到此為止 🔼🔼🔼
     @TypeConverter
     fun fromStringList(value: List<String>): String {
         return value.joinToString(",")

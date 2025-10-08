@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import stevedaydream.scheduler.data.model.Group
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import javax.inject.Inject
+import java.util.Date // ✅ 新增這個 import
 
 @HiltViewModel
 class ScheduleViewModel @Inject constructor(
@@ -74,9 +75,10 @@ class ScheduleViewModel @Inject constructor(
     private fun renewLease() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
-            // ✅ 使用安全調用
+
             val expiresAt = _group.value?.schedulerLeaseExpiresAt
-            if (expiresAt != null && System.currentTimeMillis() < expiresAt) {
+            // ⬇️ 修正 #3: 修改這裡的比較邏輯
+            if (expiresAt != null && Date().before(expiresAt)) {
                 repository.renewSchedulerLease(
                     orgId = currentOrgId,
                     groupId = currentGroupId,

@@ -21,7 +21,7 @@ object TestDataGenerator {
             id = id,
             orgName = name,
             ownerId = ownerId,
-            createdAt = System.currentTimeMillis(),
+            createdAt = Date(), // ⬅️ 修正 #4
             plan = "free",
             // ✅ 修正：使用新的 Features 巢狀類別來傳入參數
             features = Features(
@@ -51,7 +51,8 @@ object TestDataGenerator {
                 email = "${name.replace("", "")}@test.com",
                 name = name,
                 role = if (index == 0) "org_admin" else "member",
-                joinedAt = System.currentTimeMillis() - (index * 86400000L)
+                // ⬅️ 修正 #5: 將 Long 包裝成 Date 物件
+                joinedAt = Date(System.currentTimeMillis() - (index * 86400000L))
             )
         }
     }
@@ -151,7 +152,8 @@ object TestDataGenerator {
                         1 -> "approved"
                         else -> "rejected"
                     },
-                    createdAt = System.currentTimeMillis() - (dateIndex * 3600000L)
+                    // ⬅️ 修正 #6: 將 Long 包裝成 Date 物件
+                    createdAt = Date(System.currentTimeMillis() - (dateIndex * 3600000L))
                 )
             }
         }
@@ -215,7 +217,7 @@ object TestDataGenerator {
             groupId = groupId,
             month = month,
             status = "draft",
-            generatedAt = System.currentTimeMillis(),
+            generatedAt = Date(), // ⬅️ 修正 #7
             totalScore = 850,
             violatedRules = listOf()
         )
