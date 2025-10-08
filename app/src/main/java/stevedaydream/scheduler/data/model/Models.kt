@@ -168,7 +168,39 @@ data class SchedulingRule(
         groupId?.let { put("groupId", it) }
     }
 }
+// ==================== 人力規劃 ====================
+@Entity(tableName = "manpower_plans")
+data class ManpowerPlan(
+    @PrimaryKey val id: String = "", // 格式: {orgId}_{groupId}_{month}
+    val orgId: String = "",
+    val groupId: String = "",
+    val month: String = "", // YYYY-MM
+    val dailyRequirements: Map<String, DailyRequirement> = emptyMap(), // Key 為日期 "dd"
+    val updatedAt: Date = Date()
+) {
+    fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "orgId" to orgId,
+        "groupId" to groupId,
+        "month" to month,
+        "dailyRequirements" to dailyRequirements.mapValues { it.value.toFirestoreMap() },
+        "updatedAt" to updatedAt
+    )
+}
 
+data class DailyRequirement(
+    val date: String = "", // YYYY-MM-dd
+    val isHoliday: Boolean = false,
+    val holidayName: String? = null,
+    // Key: shiftTypeId, Value: required count
+    val requirements: Map<String, Int> = emptyMap()
+) {
+    fun toFirestoreMap(): Map<String, Any> = buildMap {
+        put("date", date)
+        put("isHoliday", isHoliday)
+        holidayName?.let { put("holidayName", it) }
+        put("requirements", requirements)
+    }
+}
 
 // ==================== 班表 ====================
 @Entity(tableName = "schedules")

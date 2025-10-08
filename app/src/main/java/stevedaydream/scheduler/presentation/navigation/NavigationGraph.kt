@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import stevedaydream.scheduler.presentation.auth.LoginScreen
 import stevedaydream.scheduler.presentation.group.GroupListScreen
 import stevedaydream.scheduler.presentation.organization.OrganizationListScreen
+import stevedaydream.scheduler.presentation.schedule.ManpowerScreen
 import stevedaydream.scheduler.presentation.schedule.ManualScheduleScreen
 import stevedaydream.scheduler.presentation.schedule.ScheduleDetailScreen
 import stevedaydream.scheduler.presentation.schedule.ScheduleScreen
@@ -38,6 +39,10 @@ sealed class Screen(val route: String) {
     }
     object ShiftTypeSettings : Screen("shift_type_settings/{orgId}/{groupId}") {
         fun createRoute(orgId: String, groupId: String) = "shift_type_settings/$orgId/$groupId"
+    }
+    object ManpowerDashboard : Screen("manpower_dashboard/{orgId}/{groupId}/{month}") {
+        fun createRoute(orgId: String, groupId: String, month: String) =
+            "manpower_dashboard/$orgId/$groupId/$month"
     }
 }
 
@@ -93,6 +98,9 @@ fun NavigationGraph(
                 onNavigateToManualSchedule = { org, group, month ->
                     navController.navigate(Screen.ManualSchedule.createRoute(org, group, month))
                 },
+                onNavigateToManpower = { org, group, month ->
+                    navController.navigate(Screen.ManpowerDashboard.createRoute(org, group, month))
+                },
                 onNavigateToScheduleDetail = { org, group, scheduleId ->
                     navController.navigate(Screen.ScheduleDetail.createRoute(org, group, scheduleId))
                 },
@@ -110,6 +118,11 @@ fun NavigationGraph(
             ShiftTypeSettingsScreen(
                 orgId = orgId,
                 groupId = groupId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.ManpowerDashboard.route) { backStackEntry ->
+            ManpowerScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }

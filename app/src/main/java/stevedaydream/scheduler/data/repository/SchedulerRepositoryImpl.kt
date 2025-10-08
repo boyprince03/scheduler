@@ -295,7 +295,22 @@ class SchedulerRepositoryImpl @Inject constructor(
         }
         return database.assignmentDao().getAssignmentsBySchedule(scheduleId)
     }
-    // ✅ 新增這個函式的實作
+    // ==================== 人力規劃 ====================
+    override fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?> {
+        val planId = "${orgId}_${groupId}_${month}"
+        externalScope.launch {
+            remoteDataSource.observeManpowerPlan(orgId, groupId, month)
+                .collect { plan ->
+                    plan?.let { database.manpowerPlanDao().insertPlan(it) }
+                }
+        }
+        return database.manpowerPlanDao().getPlan(planId)
+    }
+
+    override suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit> {
+        return remoteDataSource.saveManpowerPlan(orgId, plan)
+    }
+
     override suspend fun clearAllLocalData() {
         database.clearAllData()
     }

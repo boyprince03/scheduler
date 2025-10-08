@@ -2,18 +2,22 @@ package stevedaydream.scheduler.presentation.schedule
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import stevedaydream.scheduler.data.model.Schedule // ✅ 引入正確的 Schedule model
+import stevedaydream.scheduler.data.model.Schedule
+import stevedaydream.scheduler.util.DateUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,23 +27,19 @@ fun ScheduleScreen(
     onNavigateToRules: (String, String) -> Unit,
     onNavigateToManualSchedule: (String, String, String) -> Unit,
     onNavigateToShiftTypeSettings: (String, String) -> Unit,
-    onNavigateToScheduleDetail: (String, String, String) -> Unit
-
+    onNavigateToScheduleDetail: (String, String, String) -> Unit,
+    // ✅ 1. 將 onNavigateToManpower 參數加回來
+    onNavigateToManpower: (String, String, String) -> Unit
 ) {
     val group by viewModel.group.collectAsState()
     val canSchedule by viewModel.canSchedule.collectAsState()
     val isScheduler by viewModel.isScheduler.collectAsState()
-    val isGenerating by viewModel.isGenerating.collectAsState() // ✅ 新增
-    // ✅ 新增這一行來收集排班表列表
+    val isGenerating by viewModel.isGenerating.collectAsState()
     val schedules by viewModel.schedules.collectAsState()
 
-    var showMonthPicker by remember { mutableStateOf(false) } // ✅ 新增
-    var selectedMonth by remember { mutableStateOf(stevedaydream.scheduler.util.DateUtils.getCurrentMonthString()) } // ✅ 新增
+    var showMonthPicker by remember { mutableStateOf(false) }
+    var selectedMonth by remember { mutableStateOf(DateUtils.getCurrentMonthString()) }
 
-
-
-
-    // ✅ 監聽生成成功事件
     LaunchedEffect(Unit) {
         viewModel.generateSuccess.collect {
             // 可以顯示成功訊息或導航到排班檢視頁面
@@ -52,24 +52,29 @@ fun ScheduleScreen(
                 title = { Text(group?.groupName ?: "排班") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        // ✅ 3. 修正 ImageVector 警告
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (isScheduler) {
                         IconButton(onClick = { viewModel.releaseScheduler() }) {
-                            Icon(Icons.Default.ExitToApp, contentDescription = "釋放排班權")
+                            // ✅ 3. 修正 ImageVector 警告
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權")
                         }
                     }
                 }
             )
         }
     ) { padding ->
+        val scrollState = rememberScrollState()
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 排班者狀態卡片
@@ -82,7 +87,7 @@ fun ScheduleScreen(
                 )
             }
 
-            // 功能區域 - ✅ 修改這一段
+            // 功能區域
             if (isScheduler) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -99,17 +104,15 @@ fun ScheduleScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
 
-                        // 月份選擇
                         OutlinedButton(
                             onClick = { showMonthPicker = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.CalendarMonth, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("選擇月份: ${stevedaydream.scheduler.util.DateUtils.getDisplayMonth(selectedMonth)}")
+                            Text("選擇月份: ${DateUtils.getDisplayMonth(selectedMonth)}")
                         }
 
-                        // 智慧排班
                         Button(
                             onClick = { viewModel.generateSmartSchedule(selectedMonth) },
                             modifier = Modifier.fillMaxWidth(),
@@ -130,7 +133,6 @@ fun ScheduleScreen(
                             }
                         }
 
-                        // 手動排班
                         OutlinedButton(
                             onClick = {
                                 onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth)
@@ -141,17 +143,28 @@ fun ScheduleScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("手動排班")
                         }
+
+                        // ✅ 2. 修正 onClick 的 TODO，呼叫正確的導航函式
+                        OutlinedButton(
+                            onClick = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.People, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("人力規劃儀表板")
+                        }
+
                         OutlinedButton(
                             onClick = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Palette, contentDescription = null) // 使用一個不同的圖示
+                            Icon(Icons.Default.Palette, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("班別設定")
                         }
-                        // ✅ 新增規則設定按鈕
+
                         OutlinedButton(
-                            onClick = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) }, // 傳入 groupId
+                            onClick = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Rule, contentDescription = null)
@@ -162,17 +175,15 @@ fun ScheduleScreen(
                 }
             }
 
-            // ✅ 現在 'schedules' 變數已定義，可以正確傳遞
             ScheduleListSection(
                 schedules = schedules,
                 onScheduleClick = { schedule ->
-                    // ✅ 呼叫導航函式
                     onNavigateToScheduleDetail(viewModel.currentOrgId, viewModel.currentGroupId, schedule.id)
                 }
             )
         }
     }
-    // ✅ 月份選擇對話框
+
     if (showMonthPicker) {
         MonthPickerDialog(
             currentMonth = selectedMonth,
@@ -184,6 +195,8 @@ fun ScheduleScreen(
         )
     }
 }
+
+
 @Composable
 fun ScheduleListSection(
     schedules: List<Schedule>,
@@ -197,10 +210,7 @@ fun ScheduleListSection(
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            // 🔽🔽🔽 修改這裡 🔽🔽🔽
-            // 移除 Column 的 verticalArrangement，因為 LazyColumn 會自行處理
         ) {
-            // ... Row 標題部分維持不變
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -217,9 +227,7 @@ fun ScheduleListSection(
                 )
             }
 
-            // 檢查列表是否為空
             if (schedules.isEmpty()) {
-                // ... 空白狀態維持不變
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -244,24 +252,17 @@ fun ScheduleListSection(
                     }
                 }
             } else {
-                // 🔽🔽🔽 修改這裡：將 forEach 換成 LazyColumn 🔽🔽🔽
-                // 增加一個分隔線
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-                LazyColumn(
-                    // 關鍵！設定最大高度，讓內容超出時可以捲動
-                    modifier = Modifier.heightIn(max = 400.dp),
-                    // 為列表項目之間增加間距
+                Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(schedules, key = { it.id }) { schedule ->
+                    schedules.forEach { schedule ->
                         ScheduleCard(
                             schedule = schedule,
                             onClick = { onScheduleClick(schedule) }
                         )
                     }
                 }
-                // 🔼🔼🔼 到此為止 🔼🔼🔼
             }
         }
     }

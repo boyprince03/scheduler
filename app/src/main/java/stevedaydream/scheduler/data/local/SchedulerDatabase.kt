@@ -1,12 +1,16 @@
 package stevedaydream.scheduler.data.local
 
 import androidx.room.*
+import com.google.common.reflect.TypeToken
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import stevedaydream.scheduler.data.model.*
 import java.util.Date // ✅ 1. 匯入 Date
 
 // ==================== Type Converters ====================
 class Converters {
+    private val gson = Gson()
+
     // 🔽🔽🔽 在下方加入這兩個函式 🔽🔽🔽
     @TypeConverter
     fun fromTimestamp(value: Long?): Date? {
@@ -44,16 +48,29 @@ class Converters {
 
     @TypeConverter
     fun fromAnyMap(value: Map<String, Any>): String {
-        return value.entries.joinToString(";") { "${it.key}:${it.value}" }
+        // 使用 Gson 進行序列化
+        return gson.toJson(value)
     }
 
     @TypeConverter
     fun toAnyMap(value: String): Map<String, Any> {
         if (value.isEmpty()) return emptyMap()
-        return value.split(";").associate {
-            val (key, v) = it.split(":")
-            key to v as Any
-        }
+        // 使用 Gson 進行反序列化
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        return gson.fromJson(value, type)
+    }
+
+    // ✅ 新增這個 TypeConverter 來處理 DailyRequirement Map
+    @TypeConverter
+    fun fromDailyRequirementMap(value: Map<String, DailyRequirement>?): String {
+        return gson.toJson(value ?: emptyMap<String, DailyRequirement>())
+    }
+
+    @TypeConverter
+    fun toDailyRequirementMap(value: String): Map<String, DailyRequirement> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, DailyRequirement>>() {}.type
+        return gson.fromJson(value, type)
     }
 }
 
@@ -121,7 +138,6 @@ interface GroupDao {
 interface ShiftTypeDao {
     @Query("SELECT * FROM shift_types WHERE orgId = :orgId AND (groupId IS NULL OR groupId = :groupId)")
     fun getShiftTypesByOrgAndGroup(orgId: String, groupId: String): Flow<List<ShiftType>>
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShiftTypes(types: List<ShiftType>)
@@ -184,8 +200,18 @@ interface AssignmentDao {
     suspend fun deleteAssignmentsBySchedule(scheduleId: String)
 }
 
+// ✅ 新增 ManpowerPlanDao 介面
+@Dao
+interface ManpowerPlanDao {
+    @Query("SELECT * FROM manpower_plans WHERE id = :planId")
+    fun getPlan(planId: String): Flow<ManpowerPlan?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlan(plan: ManpowerPlan)
+}
+
+
 // ==================== Database ====================
-// ... (其他程式碼)
 
 @Database(
     entities = [
@@ -196,9 +222,10 @@ interface AssignmentDao {
         Request::class,
         SchedulingRule::class,
         Schedule::class,
-        Assignment::class
+        Assignment::class,
+        ManpowerPlan::class // ✅ 新增 ManpowerPlan Entity
     ],
-    version = 4,
+    version = 5, // ✅ 版本號 +1
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -211,8 +238,8 @@ abstract class SchedulerDatabase : RoomDatabase() {
     abstract fun schedulingRuleDao(): SchedulingRuleDao
     abstract fun scheduleDao(): ScheduleDao
     abstract fun assignmentDao(): AssignmentDao
+    abstract fun manpowerPlanDao(): ManpowerPlanDao // ✅ 新增 manpowerPlanDao 抽象函式
 
-    // ✅ 新增這個函式
     /**
      * 清除資料庫中的所有表格資料
      */

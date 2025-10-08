@@ -9,16 +9,10 @@ import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import stevedaydream.scheduler.data.model.Group
-import stevedaydream.scheduler.data.model.Request
-import stevedaydream.scheduler.data.model.SchedulingRule
-import stevedaydream.scheduler.data.model.ShiftType
-import stevedaydream.scheduler.data.model.User
+import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
-import javax.inject.Inject
-import java.util.Date
-import stevedaydream.scheduler.data.model.Schedule
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
+import javax.inject.Inject
 
 @HiltViewModel
 class ScheduleViewModel @Inject constructor(
@@ -27,12 +21,11 @@ class ScheduleViewModel @Inject constructor(
     private val scheduleGenerator: ScheduleGenerator,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
-    // ✅ 2. 直接從 SavedStateHandle 獲取導航參數
     val currentOrgId: String = savedStateHandle.get<String>("orgId")!!
     val currentGroupId: String = savedStateHandle.get<String>("groupId")!!
+
     private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group.asStateFlow()
-
 
     val isScheduler: StateFlow<Boolean> = _group.map { group ->
         group?.schedulerId == auth.currentUser?.uid
@@ -54,11 +47,11 @@ class ScheduleViewModel @Inject constructor(
 
     private val _generateSuccess = MutableSharedFlow<Unit>()
     val generateSuccess = _generateSuccess.asSharedFlow()
-    // ✅ 3. 新增 init 區塊
+
     init {
         loadGroupData()
     }
-    // ✅ 4. loadGroup 改名並設為 private
+
     private fun loadGroupData() {
         viewModelScope.launch {
             repository.observeGroup(currentGroupId).collect { groupData ->
@@ -133,10 +126,14 @@ class ScheduleViewModel @Inject constructor(
         }
     }
 
+    // ✅ ===== 修正點 =====
     fun generateSmartSchedule(month: String) {
         viewModelScope.launch {
             _isGenerating.value = true
             try {
+                // 在生成排班表前，先從 repository 取得該月份的人力規劃資料
+                val manpowerPlan = repository.observeManpowerPlan(currentOrgId, currentGroupId, month).firstOrNull()
+
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
@@ -144,7 +141,8 @@ class ScheduleViewModel @Inject constructor(
                     users = _users.value,
                     shiftTypes = _shiftTypes.value,
                     requests = _requests.value,
-                    rules = _rules.value.filter { it.isEnabled }
+                    rules = _rules.value.filter { it.isEnabled },
+                    manpowerPlan = manpowerPlan // 將取得的 manpowerPlan 傳入
                 )
 
                 repository.createSchedule(currentOrgId, result.schedule)

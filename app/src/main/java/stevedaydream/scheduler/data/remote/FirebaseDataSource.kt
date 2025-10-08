@@ -427,6 +427,23 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    // ==================== 人力規劃 ====================
+    fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?> {
+        val planId = "${orgId}_${groupId}_${month}"
+        return firestore.collection("organizations/$orgId/manpowerPlans")
+            .document(planId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObject(ManpowerPlan::class.java)
+            }
+    }
+
+    suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/manpowerPlans")
+            .document(plan.id)
+            .set(plan.toFirestoreMap())
+            .await()
+    }
     // ==================== 管理員 ====================
     fun observeAdminStatus(userId: String): Flow<Boolean> {
         return firestore.collection("admins").document(userId)

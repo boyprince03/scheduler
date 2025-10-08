@@ -75,7 +75,10 @@ interface SchedulerRepository {
     // ==================== 班表分配 ====================
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String>
     fun observeAssignments(scheduleId: String): Flow<List<Assignment>>
-    // ✅ 新增這個函式
+    // ==================== 人力規劃 ====================
+    fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?>
+    suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit>
+
     /**
      * 清除所有本地資料
      */
