@@ -1,5 +1,6 @@
 package stevedaydream.scheduler.data.repository
 
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 class SchedulerRepositoryImpl @Inject constructor(
     private val remoteDataSource: FirebaseDataSource,
     private val database: SchedulerDatabase,
+    private val auth: FirebaseAuth, // <-- 新增 FirebaseAuth
     private val externalScope: CoroutineScope
 ) : SchedulerRepository {
 
@@ -80,16 +82,31 @@ class SchedulerRepositoryImpl @Inject constructor(
 
 
     override fun observeUser(userId: String): Flow<User?> {
+        // ✅ 新增：啟動 Firestore 同步
+        externalScope.launch {
+            try {
+                // 從頂層 users 集合監聽
+                remoteDataSource.observeUserFromTopLevel(userId)
+                    .collect { remoteUser ->
+                        remoteUser?.let {
+                            println("🔄 [Repo] 從 Firestore 同步用戶資料: ${it.name}")
+                            database.userDao().insertUser(it)
+                        }
+                    }
+            } catch (e: Exception) {
+                println("❌ [Repo] Firestore 同步失敗: ${e.message}")
+            }
+        }
+
+        // 從本地資料庫讀取
         val localUserFlow = database.userDao().getUser(userId)
         val adminStatusFlow = observeAdminStatus(userId)
 
-        // 使用 combine 結合兩個 Flow
         return combine(localUserFlow, adminStatusFlow) { user, isSuperuser ->
+            println("📊 [Repo] 本地用戶資料: name=${user?.name}, isSuperuser=$isSuperuser")
             if (isSuperuser && user != null) {
-                // 如果是 Superuser，就覆寫其角色
                 user.copy(role = "superuser")
             } else {
-                // 否則，回傳原始的使用者資料
                 user
             }
         }
@@ -237,14 +254,36 @@ class SchedulerRepositoryImpl @Inject constructor(
     override fun observeSchedulingRules(orgId: String, groupId: String): Flow<List<SchedulingRule>> {
         externalScope.launch {
             remoteDataSource.observeSchedulingRules(orgId, groupId)
-                .collect { rules ->
-                    // 為了簡化，我們先清除該組織的所有舊規則，再插入新的
-                    // 在更複雜的場景下，你可能需要更精細的更新邏輯
-                    database.schedulingRuleDao().deleteRulesByOrg(orgId)
-                    database.schedulingRuleDao().insertRules(rules)
+                .distinctUntilChanged() // 只有在遠端資料實際變更時才觸發
+                .collect { remoteRules ->
+                    // 1. 從本地資料庫獲取當前組織的所有規則
+                    val localRules = database.schedulingRuleDao().getAllRulesByOrg(orgId)
+
+                    val remoteRuleMap = remoteRules.associateBy { it.id }
+                    val localRuleMap = localRules.associateBy { it.id }
+
+                    // 2. 找出需要刪除的規則 (存在於本地，但遠端已不存在)
+                    val rulesToDelete = localRules
+                        .filter { it.id !in remoteRuleMap }
+                        .map { it.id }
+
+                    if (rulesToDelete.isNotEmpty()) {
+                        database.schedulingRuleDao().deleteRulesByIds(rulesToDelete)
+                    }
+
+                    // 3. 找出需要新增或更新的規則 (遠端存在，但本地不存在或內容不一致)
+                    // 因為 SchedulingRule 是 data class，可以直接用 != 比較內容
+                    val rulesToInsertOrUpdate = remoteRules.filter { remoteRule ->
+                        localRuleMap[remoteRule.id] != remoteRule
+                    }
+
+                    if (rulesToInsertOrUpdate.isNotEmpty()) {
+                        // OnConflictStrategy.REPLACE 會自動處理新增和更新
+                        database.schedulingRuleDao().insertRules(rulesToInsertOrUpdate)
+                    }
                 }
         }
-        // UI 依然從本地 Room 讀取
+        // UI 依然從本地 Room 讀取，現在的資料流會更穩定
         return database.schedulingRuleDao().getRulesByOrgAndGroup(orgId, groupId)
     }
 

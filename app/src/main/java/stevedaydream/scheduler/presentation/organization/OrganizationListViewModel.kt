@@ -88,20 +88,33 @@ class OrganizationListViewModel @Inject constructor(
                 plan = "free"
             )
 
-            val adminUser = User(
-                id = currentUser.uid,
-                email = currentUser.email ?: "",
-                name = currentUser.displayName ?: "管理員",
-                role = "org_admin",
-                joinedAt = Date()
-            )
+            // ✅ 先取得最新的用戶資料
+            val existingUser = repository.observeUser(currentUser.uid).firstOrNull()
+
+            val adminUser = if (existingUser != null) {
+                // ✅ 使用已存在的資料，但確保 email 存在
+                existingUser.copy(
+                    role = "org_admin",
+                    email = existingUser.email.ifEmpty { currentUser.email ?: "" }
+                )
+            } else {
+                // ✅ 建立完整的新用戶資料
+                User(
+                    id = currentUser.uid,
+                    email = currentUser.email ?: "",
+                    name = currentUser.displayName ?: "管理員",
+                    role = "org_admin",
+                    employeeId = "",
+                    joinedAt = Date()
+                )
+            }
 
             repository.createOrganization(newOrg, adminUser)
                 .onSuccess { newOrgId ->
-                    println("Successfully created organization with ID: $newOrgId")
+                    println("✅ Successfully created organization with ID: $newOrgId")
                 }
                 .onFailure { error ->
-                    println("Failed to create organization: ${error.localizedMessage}")
+                    println("❌ Failed to create organization: ${error.localizedMessage}")
                 }
         }
     }

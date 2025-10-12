@@ -48,7 +48,6 @@ class FirebaseDataSource @Inject constructor(
     // ==================== 組織 ====================
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
-        // ✅ 1. 參照頂層的 users 集合
         val topLevelUserRef = firestore.collection("users").document(user.id)
         val orgUserRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
 
@@ -56,20 +55,17 @@ class FirebaseDataSource @Inject constructor(
         val userWithOrgId = user.copy(orgId = orgRef.id)
 
         firestore.runBatch { batch ->
-            // 建立組織
             batch.set(orgRef, orgWithId.toFirestoreMap())
-            // 建立組織內的使用者
-            batch.set(orgUserRef, userWithOrgId.toFirestoreMap())
-            // ✅ 2. 同時在頂層 users 集合中建立或更新使用者資料
-            batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap())
 
-            // 建立預設規則...
+            // ✅ 使用 merge 保留既有資料
+            batch.set(orgUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
+            batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
+
             val rulesCollection = firestore.collection("organizations/${orgRef.id}/schedulingRules")
             getDefaultSchedulingRules().forEach { rule ->
                 val ruleRef = rulesCollection.document()
                 batch.set(ruleRef, rule.toFirestoreMap())
             }
-
         }.await()
         orgRef.id
     }
@@ -136,21 +132,39 @@ class FirebaseDataSource @Inject constructor(
     }
 
     // ✅ 5. 優化 `updateUser`
+    // ✅ 修正: 簡化邏輯,不使用 collectionGroup
     suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         val topLevelUserRef = firestore.collection("users").document(userId)
 
-        // 找到使用者所屬的所有組織，並一併更新 (雖然目前架構一個使用者只在一個組織)
-        val orgUserQuery = firestore.collectionGroup("users").whereEqualTo("id", userId).get().await()
+        // 先取得頂層用戶資料,從中獲取 orgId
+        val userSnapshot = topLevelUserRef.get().await()
+        val orgId = userSnapshot.getString("orgId")
 
         firestore.runBatch { batch ->
-            // 更新頂層文件
-            batch.update(topLevelUserRef, updates)
-            // 更新所有組織內的子集合文件
-            if (!orgUserQuery.isEmpty) {
-                val orgUserDoc = orgUserQuery.documents.first()
-                batch.update(orgUserDoc.reference, updates)
+            // 更新頂層 users 集合
+            batch.set(topLevelUserRef, updates, com.google.firebase.firestore.SetOptions.merge())
+
+            // 如果有 orgId,同時更新組織內的子集合
+            if (!orgId.isNullOrEmpty()) {
+                val orgUserRef = firestore.collection("organizations/$orgId/users").document(userId)
+                batch.set(orgUserRef, updates, com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
+    }
+    /**
+     * 從頂層 users 集合監聽單一用戶
+     */
+    fun observeUserFromTopLevel(userId: String): Flow<User?> {
+        return firestore.collection("users")
+            .document(userId)
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    snapshot.toObject(User::class.java)?.copy(id = snapshot.id)
+                } else {
+                    null
+                }
+            }
     }
 
     // ==================== 群組 ====================

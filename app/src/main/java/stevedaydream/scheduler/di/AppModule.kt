@@ -79,9 +79,11 @@ object AppModule {
     fun provideSchedulerRepository(
         remoteDataSource: FirebaseDataSource,
         database: SchedulerDatabase,
+        auth: FirebaseAuth, // <-- 新增 FirebaseAuth
         @ApplicationScope externalScope: CoroutineScope
     ): SchedulerRepository {
-        return SchedulerRepositoryImpl(remoteDataSource, database, externalScope)
+        // <-- 將 auth 傳入建構子
+        return SchedulerRepositoryImpl(remoteDataSource, database, auth, externalScope)
     }
     @Provides
     @Singleton

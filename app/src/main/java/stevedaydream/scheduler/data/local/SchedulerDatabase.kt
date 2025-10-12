@@ -177,6 +177,14 @@ interface SchedulingRuleDao {
 
     @Query("DELETE FROM scheduling_rules WHERE orgId = :orgId")
     suspend fun deleteRulesByOrg(orgId: String)
+
+    // ✅ 新增：獲取組織下的所有規則，用於同步比對
+    @Query("SELECT * FROM scheduling_rules WHERE orgId = :orgId")
+    suspend fun getAllRulesByOrg(orgId: String): List<SchedulingRule>
+
+    // ✅ 新增：根據 ID 列表刪除規則
+    @Query("DELETE FROM scheduling_rules WHERE id IN (:ruleIds)")
+    suspend fun deleteRulesByIds(ruleIds: List<String>)
 }
 
 @Dao
@@ -230,7 +238,7 @@ interface ManpowerPlanDao {
         Assignment::class,
         ManpowerPlan::class
     ],
-    version = 7,
+    version = 8, // ✅ 版本號 +1，因為 Schema 變更
     exportSchema = false
 )
 @TypeConverters(Converters::class)
