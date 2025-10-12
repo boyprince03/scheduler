@@ -2,10 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 網路權限 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -21,6 +21,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Scheduler"
         tools:targetApi="31">
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -31,16 +32,13 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- 2. 建立檔案 res/xml/file_paths.xml -->
-        <?xml version="1.0" encoding="utf-8"?>
-        <paths xmlns:android="http://schemas.android.com/apk/res/android">
-            <cache-path android:name="images" android:path="images/" />
-        </paths>
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="portrait"
+            android:screenOrientation="sensorPortrait"
+            tools:replace="screenOrientation"
             android:theme="@style/zxing_CaptureTheme"
-            tools:replace="screenOrientation" />
+            tools:ignore="LockedOrientationActivity" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -50,13 +48,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="scheduler"
+                    android:host="join"
+                    android:pathPrefix="/org" />
+            </intent-filter>
         </activity>
 
-        <!-- Firebase Cloud Messaging (未來推送通知用) -->
         <service
-            android:name=".fcm.SchedulerMessagingService"
-            android:exported="false"
-            tools:ignore="MissingClass">
+            android:name=".presentation.schedule.fcm.SchedulerMessagingService"
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>

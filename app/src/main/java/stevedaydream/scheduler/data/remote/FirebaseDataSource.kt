@@ -204,19 +204,22 @@ class FirebaseDataSource @Inject constructor(
      * 驗證並使用邀請碼
      */
     suspend fun validateAndUseInviteCode(inviteCode: String): Result<OrganizationInvite> = runCatching {
+        // 1. 在 Transaction 外先執行查詢，找到目標文件的引用
+        val inviteQuery = firestore.collectionGroup("invites")
+            .whereEqualTo("inviteCode", inviteCode)
+            .whereEqualTo("isActive", true)
+            .limit(1)
+            .get()
+            .await()
+
+        if (inviteQuery.isEmpty) {
+            throw IllegalArgumentException("邀請碼不存在或已失效")
+        }
+        val inviteDocRef = inviteQuery.documents.first().reference
+
+        // 2. 在 Transaction 內執行原子的「讀取-修改-寫入」操作
         firestore.runTransaction { transaction ->
-            // 查詢邀請碼
-            val inviteQuery = firestore.collectionGroup("invites")
-                .whereEqualTo("inviteCode", inviteCode)
-                .whereEqualTo("isActive", true)
-                .get()
-                .await()
-
-            if (inviteQuery.isEmpty) {
-                throw IllegalArgumentException("邀請碼不存在或已失效")
-            }
-
-            val inviteDoc = inviteQuery.documents.first()
+            val inviteDoc = transaction.get(inviteDocRef)
             val invite = inviteDoc.toObject(OrganizationInvite::class.java)
                 ?: throw IllegalArgumentException("無法解析邀請碼")
 
@@ -227,6 +230,7 @@ class FirebaseDataSource @Inject constructor(
             // 更新使用次數
             transaction.update(inviteDoc.reference, "usedCount", invite.usedCount + 1)
 
+            // 將 invite 物件作為 transaction 的結果返回
             invite
         }.await()
     }
@@ -292,10 +296,14 @@ class FirebaseDataSource @Inject constructor(
         processedBy: String,
         targetGroupId: String? = null
     ): Result<Unit> = runCatching {
-        firestore.runBatch { batch ->
-            val requestRef = firestore.collection("organizationJoinRequests")
-                .document(requestId)
+        // 1. 在 Batch 操作前，先讀取所有需要的資料
+        val requestRef = firestore.collection("organizationJoinRequests").document(requestId)
+        val requestSnapshot = requestRef.get().await()
+        val request = requestSnapshot.toObject(OrganizationJoinRequest::class.java)
+            ?: throw IllegalArgumentException("找不到申請記錄")
 
+        // 2. 執行 Batch 寫入操作
+        firestore.runBatch { batch ->
             // 更新申請狀態
             batch.update(requestRef, mapOf(
                 "status" to if (approve) "approved" else "rejected",
@@ -304,24 +312,16 @@ class FirebaseDataSource @Inject constructor(
             ))
 
             if (approve) {
-                // 取得申請資訊
-                val requestSnapshot = requestRef.get().await()
-                val request = requestSnapshot.toObject(OrganizationJoinRequest::class.java)
-                    ?: throw IllegalArgumentException("找不到申請記錄")
-
                 // 更新用戶的 orgId
                 val userRef = firestore.collection("users").document(request.userId)
                 batch.update(userRef, "orgId", orgId)
 
-                // 如果有指定群組,將用戶加入群組
+                // 如果有指定群組,將用戶加入群組 (這裡改為直接更新，因為 Batch 中無法讀取)
                 if (targetGroupId != null) {
                     val groupRef = firestore.collection("organizations/$orgId/groups")
                         .document(targetGroupId)
-
-                    val groupSnapshot = groupRef.get().await()
-                    val currentMembers = groupSnapshot.get("memberIds") as? List<String> ?: emptyList()
-
-                    batch.update(groupRef, "memberIds", currentMembers + request.userId)
+                    // 注意：在 Batch 中，我們使用 FieldValue.arrayUnion 來原子性地添加元素，避免讀取舊列表
+                    batch.update(groupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(request.userId))
                 }
             }
         }.await()

@@ -53,6 +53,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.data.model.OrganizationJoinRequest
 import stevedaydream.scheduler.util.DateUtils
 import stevedaydream.scheduler.util.showToast
+import stevedaydream.scheduler.util.toReadableTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -318,7 +319,7 @@ private fun JoinRequestCard(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        request.requestedAt.toReadableTime(),
+                        request.requestedAt.time.toReadableTime(), // <-- .time
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -391,7 +392,7 @@ private fun ProcessedRequestCard(request: OrganizationJoinRequest) {
                 )
             }
             Text(
-                request.processedAt?.toReadableTime() ?: "",
+                request.processedAt?.time?.toReadableTime() ?: "", // <-- .time?
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

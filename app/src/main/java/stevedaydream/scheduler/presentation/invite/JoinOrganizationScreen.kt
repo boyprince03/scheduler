@@ -53,6 +53,7 @@ import stevedaydream.scheduler.util.showToast
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoinOrganizationScreen(
+    navController: androidx.navigation.NavController,
     viewModel: JoinOrganizationViewModel = hiltViewModel(),
     onJoinSuccess: () -> Unit,
     onBackClick: () -> Unit

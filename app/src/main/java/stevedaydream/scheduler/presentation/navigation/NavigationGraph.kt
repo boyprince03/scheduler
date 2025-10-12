@@ -122,6 +122,7 @@ fun NavigationGraph(
         // 加入組織
         composable(Screen.JoinOrganization.route) {
             JoinOrganizationScreen(
+                navController = navController, // <-- 傳入 navController
                 onJoinSuccess = { navController.popBackStack() },
                 onBackClick = { navController.popBackStack() }
             )

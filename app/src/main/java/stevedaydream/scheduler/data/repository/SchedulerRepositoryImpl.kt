@@ -23,6 +23,38 @@ class SchedulerRepositoryImpl @Inject constructor(
     private val externalScope: CoroutineScope
 ) : SchedulerRepository {
 
+    // ==================== 組織邀請管理 ====================
+    override suspend fun createOrganizationInvite(
+        orgId: String,
+        invite: OrganizationInvite
+    ): Result<String> {
+        return remoteDataSource.createOrganizationInvite(orgId, invite)
+    }
+    override fun observeOrganizationInvites(orgId: String): Flow<List<OrganizationInvite>> {
+        // 啟動背景同步監聽
+        externalScope.launch {
+            remoteDataSource.observeOrganizationInvites(orgId)
+                .collect { remoteInvites ->
+                    // 同步資料：先刪除舊的，再插入新的
+                    database.organizationInviteDao().deleteInvitesByOrg(orgId)
+                    database.organizationInviteDao().insertInvites(remoteInvites)
+                }
+        }
+        // UI 層從本地資料庫讀取資料
+        return database.organizationInviteDao().getInvitesByOrg(orgId)
+    }
+    override suspend fun getOrganizationByInviteCode(inviteCode: String): Result<Organization?> {
+        return remoteDataSource.getOrganizationByInviteCode(inviteCode)
+    }
+
+    override suspend fun validateAndUseInviteCode(inviteCode: String): Result<OrganizationInvite> {
+        return remoteDataSource.validateAndUseInviteCode(inviteCode)
+    }
+
+    override suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit> {
+        return remoteDataSource.deactivateInvite(orgId, inviteId)
+    }
+
     // ==================== 組織 ====================
     override suspend fun createOrganization(org: Organization, user: User): Result<String> {
         // 我們直接呼叫 FirebaseDataSource，讓它處理交易
@@ -60,7 +92,59 @@ class SchedulerRepositoryImpl @Inject constructor(
         database.organizationDao().deleteOrganizationsByOwner(ownerId)
         database.organizationDao().insertOrganizations(remoteOrgs)
     }
+// ==================== 組織加入申請 ====================
 
+    override suspend fun createOrganizationJoinRequest(
+        request: OrganizationJoinRequest
+    ): Result<String> {
+        return remoteDataSource.createOrganizationJoinRequest(request)
+    }
+
+    override fun observeOrganizationJoinRequests(orgId: String): Flow<List<OrganizationJoinRequest>> {
+        // 啟動背景同步監聽
+        externalScope.launch {
+            remoteDataSource.observeOrganizationJoinRequests(orgId)
+                .collect { remoteRequests ->
+                    // 同步資料：先刪除舊的，再插入新的
+                    database.organizationJoinRequestDao().deleteRequestsByOrg(orgId)
+                    database.organizationJoinRequestDao().insertRequests(remoteRequests)
+                }
+        }
+        // UI 層從本地資料庫讀取資料
+        return database.organizationJoinRequestDao().getRequestsByOrg(orgId)
+    }
+
+    override fun observeUserJoinRequests(userId: String): Flow<List<OrganizationJoinRequest>> {
+        // 啟動背景同步監聽
+        externalScope.launch {
+            remoteDataSource.observeUserJoinRequests(userId)
+                .collect { remoteRequests ->
+                    // 同步資料：先刪除用戶舊的申請，再插入新的
+                    database.organizationJoinRequestDao().deleteRequestsByUser(userId)
+                    database.organizationJoinRequestDao().insertRequests(remoteRequests)
+                }
+        }
+        // UI 層從本地資料庫讀取資料
+        return database.organizationJoinRequestDao().getRequestsByUser(userId)
+    }
+
+    override suspend fun processJoinRequest(
+        orgId: String,
+        requestId: String,
+        approve: Boolean,
+        processedBy: String,
+        targetGroupId: String?
+    ): Result<Unit> {
+        return remoteDataSource.processJoinRequest(orgId, requestId, approve, processedBy, targetGroupId)
+    }
+
+    override suspend fun generateUniqueOrgCode(): String {
+        return remoteDataSource.generateUniqueOrgCode()
+    }
+
+    override suspend fun getOrganizationByCode(orgCode: String): Result<Organization?> {
+        return remoteDataSource.getOrganizationByCode(orgCode)
+    }
 
     // ==================== 使用者 ====================
     override suspend fun createUser(orgId: String, user: User): Result<String> {
