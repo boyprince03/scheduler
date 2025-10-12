@@ -9,8 +9,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AssignmentInd
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Logout // ✅ 引入圖示
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
@@ -87,6 +89,21 @@ fun OrganizationListScreen(
             TopAppBar(
                 title = { Text("我的組織") },
                 actions = {
+                    // 加入組織按鈕
+                    IconButton(onClick = {
+                        navController.navigate(Screen.JoinOrganization.route)
+                    }) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "加入組織")
+                    }
+
+                    // 審核申請按鈕 (僅組織管理員)
+                    if (currentUser?.role == "org_admin" && currentUser?.orgId?.isNotEmpty() == true) {
+                        IconButton(onClick = {
+                            navController.navigate(Screen.ReviewRequests.createRoute(currentUser.orgId))
+                        }) {
+                            Icon(Icons.Default.AssignmentInd, contentDescription = "審核申請")
+                        }
+                    }
                     if (currentUser?.role == "superuser") {
                         // ✅ 2. 修改 onClick，呼叫新的導航事件
                         IconButton(onClick = onAdminClick) {
