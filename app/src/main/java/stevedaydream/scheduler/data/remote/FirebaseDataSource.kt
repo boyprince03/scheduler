@@ -10,6 +10,7 @@ import stevedaydream.scheduler.data.model.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.tasks.await // 確保有這個 import
+import stevedaydream.scheduler.util.TestDataGenerator
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -43,32 +44,33 @@ class FirebaseDataSource @Inject constructor(
     }
 
 
+
     // ==================== 組織 ====================
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
-        val userRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
+        // ✅ 1. 參照頂層的 users 集合
+        val topLevelUserRef = firestore.collection("users").document(user.id)
+        val orgUserRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
 
         val orgWithId = org.copy(id = orgRef.id)
         val userWithOrgId = user.copy(orgId = orgRef.id)
 
         firestore.runBatch { batch ->
-            // 1. 建立組織
+            // 建立組織
             batch.set(orgRef, orgWithId.toFirestoreMap())
-            // 2. 建立第一個使用者 (管理員)
-            batch.set(userRef, userWithOrgId.toFirestoreMap())
+            // 建立組織內的使用者
+            batch.set(orgUserRef, userWithOrgId.toFirestoreMap())
+            // ✅ 2. 同時在頂層 users 集合中建立或更新使用者資料
+            batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap())
 
-
-            // 3. 建立預設的排班規則
+            // 建立預設規則...
             val rulesCollection = firestore.collection("organizations/${orgRef.id}/schedulingRules")
             getDefaultSchedulingRules().forEach { rule ->
                 val ruleRef = rulesCollection.document()
-                // 我們不需要 id，因為 Firestore 會自動產生
                 batch.set(ruleRef, rule.toFirestoreMap())
             }
 
-
         }.await()
-
         orgRef.id
     }
 
@@ -104,9 +106,15 @@ class FirebaseDataSource @Inject constructor(
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String> = runCatching {
-        val docRef = firestore.collection("organizations/$orgId/users").document()
-        val userWithId = user.copy(id = docRef.id, orgId = orgId)
-        docRef.set(userWithId.toFirestoreMap()).await()
+        val docRef = firestore.collection("organizations/$orgId/users").document(user.id)
+        val topLevelUserRef = firestore.collection("users").document(user.id)
+        val userWithId = user.copy(orgId = orgId)
+
+        firestore.runBatch { batch ->
+            batch.set(docRef, userWithId.toFirestoreMap())
+            // ✅ 3. 同樣在頂層 users 集合中建立
+            batch.set(topLevelUserRef, userWithId.toFirestoreMap())
+        }.await()
         docRef.id
     }
 
@@ -118,6 +126,31 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(User::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
+    }
+
+    // ✅ 4. 優化 `checkUserExists`
+    suspend fun checkUserExists(userId: String): Boolean {
+        // 直接查詢頂層 users 集合，更快速且不需要特殊索引
+        val userDoc = firestore.collection("users").document(userId).get().await()
+        return userDoc.exists()
+    }
+
+    // ✅ 5. 優化 `updateUser`
+    suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
+        val topLevelUserRef = firestore.collection("users").document(userId)
+
+        // 找到使用者所屬的所有組織，並一併更新 (雖然目前架構一個使用者只在一個組織)
+        val orgUserQuery = firestore.collectionGroup("users").whereEqualTo("id", userId).get().await()
+
+        firestore.runBatch { batch ->
+            // 更新頂層文件
+            batch.update(topLevelUserRef, updates)
+            // 更新所有組織內的子集合文件
+            if (!orgUserQuery.isEmpty) {
+                val orgUserDoc = orgUserQuery.documents.first()
+                batch.update(orgUserDoc.reference, updates)
+            }
+        }.await()
     }
 
     // ==================== 群組 ====================
@@ -143,6 +176,13 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(Group::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
+    }
+    // ==================== 組別加入申請 ====================
+    suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/groupJoinRequests").document()
+        val requestWithId = request.copy(id = docRef.id)
+        docRef.set(requestWithId.toFirestoreMap()).await()
+        docRef.id
     }
 
     // ==================== 排班者認領 ====================
@@ -444,6 +484,7 @@ class FirebaseDataSource @Inject constructor(
             .set(plan.toFirestoreMap())
             .await()
     }
+
     // ==================== 管理員 ====================
     fun observeAdminStatus(userId: String): Flow<Boolean> {
         return firestore.collection("admins").document(userId)
@@ -451,5 +492,51 @@ class FirebaseDataSource @Inject constructor(
             .map { snapshot ->
                 snapshot.exists() && snapshot.getString("role") == "superuser"
             }
+    }
+    // ==================== 超級管理員 ====================
+    suspend fun createTestData(dataSet: TestDataGenerator.TestDataSet): Result<Unit> = runCatching {
+        val orgRef = firestore.collection("organizations").document(dataSet.organization.id)
+
+        firestore.runBatch { batch ->
+            // 1. 寫入組織
+            batch.set(orgRef, dataSet.organization.toFirestoreMap())
+
+            // 2. 寫入使用者
+            dataSet.users.forEach { user ->
+                val userRef = orgRef.collection("users").document(user.id)
+                batch.set(userRef, user.toFirestoreMap())
+            }
+
+            // 3. 寫入群組
+            dataSet.groups.forEach { group ->
+                val groupRef = orgRef.collection("groups").document(group.id)
+                batch.set(groupRef, group.toFirestoreMap())
+            }
+
+            // 4. 寫入班別類型
+            dataSet.shiftTypes.forEach { shiftType ->
+                val shiftTypeRef = orgRef.collection("shiftTypes").document(shiftType.id)
+                batch.set(shiftTypeRef, shiftType.toFirestoreMap())
+            }
+
+            // 5. 寫入排班規則
+            dataSet.rules.forEach { rule ->
+                val ruleRef = orgRef.collection("schedulingRules").document(rule.id)
+                batch.set(ruleRef, rule.toFirestoreMap())
+            }
+
+            // 6. 寫入班表和班表分配
+            dataSet.schedules.forEach { schedule ->
+                val scheduleRef = orgRef.collection("schedules").document(schedule.id)
+                batch.set(scheduleRef, schedule.toFirestoreMap())
+
+                // 找到屬於這個班表的分配
+                val assignmentsForSchedule = dataSet.assignments.filter { it.scheduleId == schedule.id }
+                assignmentsForSchedule.forEach { assignment ->
+                    val assignmentRef = scheduleRef.collection("assignments").document(assignment.id)
+                    batch.set(assignmentRef, assignment.toFirestoreMap())
+                }
+            }
+        }.await()
     }
 }

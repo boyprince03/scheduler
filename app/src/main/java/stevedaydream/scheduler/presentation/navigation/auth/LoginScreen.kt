@@ -21,8 +21,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
-    onLoginSuccess: () -> Unit,
-    onGoogleSignInClick: () -> Unit // <-- 1. 添加这个参数
+    onLoginSuccess: (Boolean) -> Unit, // ✅ 1. 修改 onLoginSuccess 參數
+    onGoogleSignInClick: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -34,11 +34,10 @@ fun LoginScreen(
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             lifecycleOwner.lifecycleScope.launch {
-                // 这里对 MainActivity 的引用是正确的，因为需要调用 handleGoogleSignInResult
                 val mainActivity = context as? stevedaydream.scheduler.MainActivity
                 mainActivity?.handleGoogleSignInResult(result.data)?.let { authResult ->
-                    authResult.onSuccess {
-                        viewModel.onLoginSuccess()
+                    authResult.onSuccess { isNewUser -> // ✅ 2. handleGoogleSignInResult 現在會回傳 isNewUser
+                        viewModel.onLoginSuccess(isNewUser) // ✅ 3. 將 isNewUser 傳遞給 ViewModel
                     }.onFailure { error ->
                         viewModel.onLoginError(error.localizedMessage ?: "登入失敗")
                     }
@@ -55,9 +54,11 @@ fun LoginScreen(
     }
 
     // 监听登录成功
-    LaunchedEffect(uiState.isLoginSuccess) {
-        if (uiState.isLoginSuccess) {
-            onLoginSuccess()
+    LaunchedEffect(uiState.loginResult) { // ✅ 4. 監聽新的 loginResult
+        uiState.loginResult?.let { (isSuccess, isNewUser) ->
+            if (isSuccess) {
+                onLoginSuccess(isNewUser) // ✅ 5. 回呼時傳出 isNewUser
+            }
         }
     }
 

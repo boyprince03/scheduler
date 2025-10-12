@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import stevedaydream.scheduler.presentation.admin.AdminScreen
 import stevedaydream.scheduler.presentation.auth.LoginScreen
 import stevedaydream.scheduler.presentation.group.GroupListScreen
 import stevedaydream.scheduler.presentation.organization.OrganizationListScreen
@@ -13,9 +14,12 @@ import stevedaydream.scheduler.presentation.schedule.ScheduleDetailScreen
 import stevedaydream.scheduler.presentation.schedule.ScheduleScreen
 import stevedaydream.scheduler.presentation.schedule.SchedulingRulesScreen
 import stevedaydream.scheduler.presentation.schedule.ShiftTypeSettingsScreen
+import stevedaydream.scheduler.presentation.user.UserProfileScreen
+import stevedaydream.scheduler.presentation.user.BasicInfoScreen
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
+    object BasicInfo : Screen("basic_info") // ✅ 1. 新增 BasicInfo Screen
     object OrganizationList : Screen("organization_list")
     object GroupList : Screen("group_list/{orgId}") {
         fun createRoute(orgId: String) = "group_list/$orgId"
@@ -44,6 +48,9 @@ sealed class Screen(val route: String) {
         fun createRoute(orgId: String, groupId: String, month: String) =
             "manpower_dashboard/$orgId/$groupId/$month"
     }
+    object Admin : Screen("admin") // ✅ 2. 新增 Admin Screen
+    object UserProfile : Screen("user_profile")
+
 }
 
 @Composable
@@ -59,12 +66,28 @@ fun NavigationGraph(
     ) {
         composable(Screen.Login.route) {
             LoginScreen(
-                onLoginSuccess = {
-                    navController.navigate(Screen.OrganizationList.route) {
+                onLoginSuccess = { isNewUser -> // ✅ 2. 修改 onLoginSuccess 的參數
+                    val destination = if (isNewUser) {
+                        Screen.BasicInfo.route
+                    } else {
+                        Screen.OrganizationList.route
+                    }
+                    navController.navigate(destination) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
                 },
-                onGoogleSignInClick = onGoogleSignInClick // <-- 新增这一行，将参数传递下去
+                onGoogleSignInClick = onGoogleSignInClick
+            )
+        }
+
+        // ✅ 3. 新增 BasicInfoScreen 的 composable
+        composable(Screen.BasicInfo.route) {
+            BasicInfoScreen(
+                onSaveSuccess = {
+                    navController.navigate(Screen.OrganizationList.route) {
+                        popUpTo(Screen.BasicInfo.route) { inclusive = true }
+                    }
+                }
             )
         }
 
@@ -73,7 +96,17 @@ fun NavigationGraph(
                 navController = navController, // ✅ 傳入 navController
                 onOrganizationClick = { orgId ->
                     navController.navigate(Screen.GroupList.createRoute(orgId))
+                },
+                // ✅ 3. 新增 onAdminClick 導航事件
+                onAdminClick = {
+                    navController.navigate(Screen.Admin.route)
                 }
+            )
+        }
+        // ✅ 4. 新增 AdminScreen 的 composable
+        composable(Screen.Admin.route) {
+            AdminScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 
@@ -152,6 +185,12 @@ fun NavigationGraph(
             SchedulingRulesScreen(
                 orgId = orgId,
                 groupId = groupId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        // <-- 3. 新增 UserProfileScreen 的 composable 區塊
+        composable(Screen.UserProfile.route) {
+            UserProfileScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }

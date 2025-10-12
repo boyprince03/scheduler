@@ -17,12 +17,16 @@ interface SchedulerRepository {
     fun observeUsers(orgId: String): Flow<List<User>>
     fun observeUser(userId: String): Flow<User?>
     fun observeAdminStatus(userId: String): Flow<Boolean> // ✅ 新增這一行
+    suspend fun checkUserExists(userId: String): Boolean // ✅ 新增
+    suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> // ✅ 新增
 
     // ==================== 群組 ====================
     suspend fun createGroup(orgId: String, group: Group): Result<String>
     suspend fun updateGroup(orgId: String, groupId: String, updates: Map<String, Any>): Result<Unit>
     fun observeGroups(orgId: String): Flow<List<Group>>
     fun observeGroup(groupId: String): Flow<Group?>
+    // ==================== 組別加入申請 ====================
+    suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String>
 
     // ==================== 排班者生命週期 ====================
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String): Result<Boolean>
@@ -78,6 +82,9 @@ interface SchedulerRepository {
     // ==================== 人力規劃 ====================
     fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?>
     suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit>
+    // ==================== 超級管理員 ====================
+    suspend fun createTestData(orgName: String, ownerId: String, testMemberEmail: String): Result<Unit>
+
 
     /**
      * 清除所有本地資料

@@ -44,12 +44,14 @@ data class User(
     val email: String = "",
     val name: String = "",
     val role: String = "member", // ✅ 修改這裡 -> org_admin, member, superuser
+    val employeeId: String = "", // <-- 新增員工編號欄位
     val joinedAt: Date = Date() // ✅ 2. 將 Long 改為 Date
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "email" to email,
         "name" to name,
         "role" to role,
+        "employeeId" to employeeId, // <-- 記得也要加入到 map 中
         "joinedAt" to joinedAt // ✅ 3. 直接傳遞 Date 物件
     )
 }
@@ -67,7 +69,7 @@ data class Group(
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
         put("groupName", groupName)
-        put("members", memberIds)
+        put("memberIds", memberIds)
         schedulerId?.let { put("schedulerId", it) }
         schedulerName?.let { put("schedulerName", it) }
         schedulerLeaseExpiresAt?.let {
@@ -81,6 +83,28 @@ data class Group(
     }
 }
 
+// ==================== 組別加入申請 ====================
+@Entity(tableName = "group_join_requests")
+data class GroupJoinRequest(
+    @PrimaryKey val id: String = "",
+    val orgId: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val targetGroupId: String = "",
+    val targetGroupName: String = "",
+    val status: String = "pending", // pending, approved, rejected
+    val requestedAt: Date = Date()
+) {
+    fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "orgId" to orgId,
+        "userId" to userId,
+        "userName" to userName,
+        "targetGroupId" to targetGroupId,
+        "targetGroupName" to targetGroupName,
+        "status" to status,
+        "requestedAt" to requestedAt
+    )
+}
 // ==================== 班別類型 ====================
 @Entity(tableName = "shift_types")
 data class ShiftType(
@@ -169,12 +193,29 @@ data class SchedulingRule(
     }
 }
 // ==================== 人力規劃 ====================
+// ✅ 1. 新增一個資料類別來儲存人力範本
+data class RequirementDefaults(
+    // Key: shiftTypeId, Value: required count
+    val weekday: Map<String, Int> = emptyMap(),
+    val saturday: Map<String, Int> = emptyMap(),
+    val sunday: Map<String, Int> = emptyMap(),
+    val holiday: Map<String, Int> = emptyMap()
+) {
+    fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "weekday" to weekday,
+        "saturday" to saturday,
+        "sunday" to sunday,
+        "holiday" to holiday
+    )
+}
 @Entity(tableName = "manpower_plans")
 data class ManpowerPlan(
     @PrimaryKey val id: String = "", // 格式: {orgId}_{groupId}_{month}
     val orgId: String = "",
     val groupId: String = "",
     val month: String = "", // YYYY-MM
+    // ✅ 2. 新增欄位來儲存人力範本
+    @Embedded val requirementDefaults: RequirementDefaults = RequirementDefaults(),
     val dailyRequirements: Map<String, DailyRequirement> = emptyMap(), // Key 為日期 "dd"
     val updatedAt: Date = Date()
 ) {
@@ -182,6 +223,7 @@ data class ManpowerPlan(
         "orgId" to orgId,
         "groupId" to groupId,
         "month" to month,
+        "requirementDefaults" to requirementDefaults.toFirestoreMap(),
         "dailyRequirements" to dailyRequirements.mapValues { it.value.toFirestoreMap() },
         "updatedAt" to updatedAt
     )

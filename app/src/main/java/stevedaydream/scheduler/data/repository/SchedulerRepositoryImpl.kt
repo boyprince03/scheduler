@@ -7,6 +7,7 @@ import stevedaydream.scheduler.data.local.*
 import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.data.remote.FirebaseDataSource
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+import stevedaydream.scheduler.util.TestDataGenerator
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -77,7 +78,7 @@ class SchedulerRepositoryImpl @Inject constructor(
         return database.userDao().getUsersByOrg(orgId)
     }
 
-    // 🔽🔽🔽 修改這個函式 🔽🔽🔽
+
     override fun observeUser(userId: String): Flow<User?> {
         val localUserFlow = database.userDao().getUser(userId)
         val adminStatusFlow = observeAdminStatus(userId)
@@ -93,14 +94,22 @@ class SchedulerRepositoryImpl @Inject constructor(
             }
         }
     }
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
-    // 🔽🔽🔽 新增這個函式 🔽🔽🔽
+    // ✅ 新增
+    override suspend fun checkUserExists(userId: String): Boolean {
+        return remoteDataSource.checkUserExists(userId)
+    }
+
+    // ✅ 新增
+    override suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> {
+        return remoteDataSource.updateUser(userId, updates)
+    }
+
     override fun observeAdminStatus(userId: String): Flow<Boolean> {
         // 直接從遠端監聽，這個狀態不需要快取
         return remoteDataSource.observeAdminStatus(userId)
     }
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
     // ==================== 群組 ====================
     override suspend fun createGroup(orgId: String, group: Group): Result<String> {
@@ -126,6 +135,10 @@ class SchedulerRepositoryImpl @Inject constructor(
 
     override fun observeGroup(groupId: String): Flow<Group?> {
         return database.groupDao().getGroup(groupId)
+    }
+    // ==================== 組別加入申請 ====================
+    override suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> {
+        return remoteDataSource.createGroupJoinRequest(orgId, request)
     }
 
     // ==================== 排班者生命週期 ====================
@@ -309,6 +322,13 @@ class SchedulerRepositoryImpl @Inject constructor(
 
     override suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit> {
         return remoteDataSource.saveManpowerPlan(orgId, plan)
+    }
+    // ==================== 超級管理員 ====================
+    override suspend fun createTestData(orgName: String, ownerId: String, testMemberEmail: String): Result<Unit> {
+        // 呼叫 TestDataGenerator 來產生完整的資料集
+        val dataSet = TestDataGenerator.generateCompleteTestDataSet(orgName, ownerId, testMemberEmail)
+        // 將產生的資料集傳遞給 FirebaseDataSource 進行批次寫入
+        return remoteDataSource.createTestData(dataSet)
     }
 
     override suspend fun clearAllLocalData() {

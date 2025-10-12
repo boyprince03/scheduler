@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Business
@@ -29,7 +30,8 @@ import stevedaydream.scheduler.presentation.navigation.Screen // ✅ 引入 Scre
 fun OrganizationListScreen(
     navController: NavHostController, // ✅ 傳入 NavController
     viewModel: OrganizationListViewModel = hiltViewModel(),
-    onOrganizationClick: (String) -> Unit
+    onOrganizationClick: (String) -> Unit,
+    onAdminClick: () -> Unit
 ) {
     val organizations by viewModel.organizations.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -85,9 +87,9 @@ fun OrganizationListScreen(
             TopAppBar(
                 title = { Text("我的組織") },
                 actions = {
-                    // ✅ 只有 Superuser 能看到這個按鈕
                     if (currentUser?.role == "superuser") {
-                        IconButton(onClick = { /* 進入管理後台 */ }) {
+                        // ✅ 2. 修改 onClick，呼叫新的導航事件
+                        IconButton(onClick = onAdminClick) {
                             Icon(
                                 imageVector = Icons.Default.AdminPanelSettings,
                                 contentDescription = "管理後台"
@@ -98,6 +100,13 @@ fun OrganizationListScreen(
                         Icon(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "登出"
+                        )
+                    }
+                    // 新增個人資料頁面入口
+                    IconButton(onClick = { navController.navigate(Screen.UserProfile.route) }) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "個人資料"
                         )
                     }
                 }

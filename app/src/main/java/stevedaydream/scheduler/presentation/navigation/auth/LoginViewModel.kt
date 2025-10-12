@@ -13,7 +13,7 @@ import javax.inject.Inject
 
 data class LoginUiState(
     val isLoading: Boolean = false,
-    val isLoginSuccess: Boolean = false,
+    val loginResult: Pair<Boolean, Boolean>? = null, // (isSuccess, isNewUser)
     val error: String? = null
 )
 
@@ -29,8 +29,8 @@ class LoginViewModel @Inject constructor(
         _uiState.update { it.copy(isLoading = true, error = null) }
     }
 
-    fun onLoginSuccess() {
-        _uiState.update { it.copy(isLoading = false, isLoginSuccess = true) }
+    fun onLoginSuccess(isNewUser: Boolean) {
+        _uiState.update { it.copy(isLoading = false, loginResult = Pair(true, isNewUser)) }
     }
 
     fun onLoginError(message: String) {
@@ -41,8 +41,10 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                auth.signInAnonymously().await()
-                onLoginSuccess()
+                // ✅ 修正點: 取得 AuthResult 並傳遞 isNewUser
+                val result = auth.signInAnonymously().await()
+                val isNewUser = result.additionalUserInfo?.isNewUser ?: true // 匿名登入預設為新用戶
+                onLoginSuccess(isNewUser)
             } catch (e: Exception) {
                 onLoginError(e.localizedMessage ?: "Anonymous sign-in failed")
             }

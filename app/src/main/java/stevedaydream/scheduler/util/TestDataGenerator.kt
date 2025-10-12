@@ -2,6 +2,7 @@ package stevedaydream.scheduler.util
 
 import stevedaydream.scheduler.data.model.*
 import java.util.*
+import kotlin.math.absoluteValue
 
 /**
  * 測試資料產生器
@@ -240,7 +241,7 @@ object TestDataGenerator {
                 val dayInt = day.toInt()
 
                 // 簡單的排班邏輯:每4天一個循環
-                val shiftIndex = (dayInt + user.id.hashCode()) % 4
+                val shiftIndex = (dayInt + user.id.hashCode().absoluteValue) % 4 // <-- 修正點
                 day to shiftTypes[shiftIndex]
             }
 
@@ -270,11 +271,37 @@ object TestDataGenerator {
 
     fun generateCompleteTestDataSet(
         orgName: String = "測試公司",
-        ownerId: String = "test-owner-001"
+        ownerId: String, // <-- 7. 將 ownerId 參數從預設值改為必要參數
+        testMemberEmail: String // <-- 8. 新增 testMemberEmail 參數
     ): TestDataSet {
+        // 8. 在產生組織時，明確傳入 ownerId
         val org = generateOrganization(name = orgName, ownerId = ownerId)
-        val users = generateUsers(org.id)
-        val groups = generateGroups(org.id, users.map { it.id })
+        var users = generateUsers(org.id) // <-- 將 val 改為 var
+        var groups = generateGroups(org.id, users.map { it.id }) // <-- 將 val 改為 var
+        // --- 9. 新增以下邏輯來建立與加入測試成員 ---
+        if (testMemberEmail.isNotBlank()) {
+            val testMemberId = "test-member-${UUID.randomUUID().toString().take(8)}"
+            val testMember = User(
+                id = testMemberId,
+                orgId = org.id,
+                email = testMemberEmail,
+                name = "測試成員",
+                role = "member",
+                joinedAt = Date()
+            )
+            // 將測試成員加入使用者列表
+            users = users + testMember
+
+            // 將測試成員加入第一個群組
+            groups = groups.mapIndexed { index, group ->
+                if (index == 0) {
+                    group.copy(memberIds = group.memberIds + testMemberId)
+                } else {
+                    group
+                }
+            }
+        }
+
         val shiftTypes = generateShiftTypes(org.id)
         val requests = generateRequests(org.id, users)
         val rules = generateSchedulingRules(org.id)
@@ -291,8 +318,8 @@ object TestDataGenerator {
 
         return TestDataSet(
             organization = org,
-            users = users,
-            groups = groups,
+            users = users, // 回傳包含測試成員的使用者列表
+            groups = groups, // 回傳更新後的群組
             shiftTypes = shiftTypes,
             requests = requests,
             rules = rules,

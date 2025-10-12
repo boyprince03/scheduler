@@ -34,7 +34,7 @@ class OrganizationListViewModel @Inject constructor(
     fun loadOrganizations() {
         viewModelScope.launch {
             val currentUid = auth.currentUser?.uid
-            println("🔍 Current user UID: $currentUid")
+            println("🔍 [DEBUG] Current user UID from ViewModel is: $currentUid") // <--- 新增這一行
 
             currentUid?.let { ownerId ->
                 // ✅ 取得使用者詳細資料

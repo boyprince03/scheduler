@@ -1,17 +1,16 @@
 package stevedaydream.scheduler.data.local
 
 import androidx.room.*
-import com.google.common.reflect.TypeToken
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import stevedaydream.scheduler.data.model.*
-import java.util.Date // ✅ 1. 匯入 Date
+import java.util.Date
 
 // ==================== Type Converters ====================
 class Converters {
     private val gson = Gson()
 
-    // 🔽🔽🔽 在下方加入這兩個函式 🔽🔽🔽
     @TypeConverter
     fun fromTimestamp(value: Long?): Date? {
         return value?.let { Date(it) }
@@ -21,7 +20,7 @@ class Converters {
     fun dateToTimestamp(date: Date?): Long? {
         return date?.time
     }
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
     @TypeConverter
     fun fromStringList(value: List<String>): String {
         return value.joinToString(",")
@@ -48,19 +47,16 @@ class Converters {
 
     @TypeConverter
     fun fromAnyMap(value: Map<String, Any>): String {
-        // 使用 Gson 進行序列化
         return gson.toJson(value)
     }
 
     @TypeConverter
     fun toAnyMap(value: String): Map<String, Any> {
         if (value.isEmpty()) return emptyMap()
-        // 使用 Gson 進行反序列化
         val type = object : TypeToken<Map<String, Any>>() {}.type
         return gson.fromJson(value, type)
     }
 
-    // ✅ 新增這個 TypeConverter 來處理 DailyRequirement Map
     @TypeConverter
     fun fromDailyRequirementMap(value: Map<String, DailyRequirement>?): String {
         return gson.toJson(value ?: emptyMap<String, DailyRequirement>())
@@ -72,6 +68,18 @@ class Converters {
         val type = object : TypeToken<Map<String, DailyRequirement>>() {}.type
         return gson.fromJson(value, type)
     }
+
+    @TypeConverter
+    fun fromIntMap(value: Map<String, Int>?): String {
+        return gson.toJson(value ?: emptyMap<String, Int>())
+    }
+
+    @TypeConverter
+    fun toIntMap(value: String): Map<String, Int> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, Int>>() {}.type
+        return gson.fromJson(value, type)
+    }
 }
 
 // ==================== DAOs ====================
@@ -80,7 +88,6 @@ interface OrganizationDao {
     @Query("SELECT * FROM organizations WHERE id = :orgId")
     fun getOrganization(orgId: String): Flow<Organization?>
 
-    // 🔽🔽🔽 在下方加入這三個函式 🔽🔽🔽
     @Query("SELECT * FROM organizations WHERE ownerId = :ownerId")
     fun getOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
 
@@ -89,7 +96,6 @@ interface OrganizationDao {
 
     @Query("DELETE FROM organizations WHERE ownerId = :ownerId")
     suspend fun deleteOrganizationsByOwner(ownerId: String)
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrganization(org: Organization)
@@ -200,7 +206,6 @@ interface AssignmentDao {
     suspend fun deleteAssignmentsBySchedule(scheduleId: String)
 }
 
-// ✅ 新增 ManpowerPlanDao 介面
 @Dao
 interface ManpowerPlanDao {
     @Query("SELECT * FROM manpower_plans WHERE id = :planId")
@@ -223,9 +228,9 @@ interface ManpowerPlanDao {
         SchedulingRule::class,
         Schedule::class,
         Assignment::class,
-        ManpowerPlan::class // ✅ 新增 ManpowerPlan Entity
+        ManpowerPlan::class
     ],
-    version = 5, // ✅ 版本號 +1
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -238,7 +243,7 @@ abstract class SchedulerDatabase : RoomDatabase() {
     abstract fun schedulingRuleDao(): SchedulingRuleDao
     abstract fun scheduleDao(): ScheduleDao
     abstract fun assignmentDao(): AssignmentDao
-    abstract fun manpowerPlanDao(): ManpowerPlanDao // ✅ 新增 manpowerPlanDao 抽象函式
+    abstract fun manpowerPlanDao(): ManpowerPlanDao
 
     /**
      * 清除資料庫中的所有表格資料

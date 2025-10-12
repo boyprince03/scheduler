@@ -7,10 +7,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
@@ -22,6 +25,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.presentation.navigation.NavigationGraph
 import stevedaydream.scheduler.presentation.navigation.Screen
 import stevedaydream.scheduler.ui.theme.SchedulerTheme
@@ -32,7 +36,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var auth: FirebaseAuth
-
+    @Inject
+    lateinit var repository: SchedulerRepository // ✅ 1. 注入 Repository
     private lateinit var oneTapClient: SignInClient
     private lateinit var signInRequest: BeginSignInRequest
 
@@ -58,20 +63,39 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val navController = rememberNavController()
 
-                    // 檢查使用者登入狀態
-                    val startDestination = if (auth.currentUser != null) {
-                        Screen.OrganizationList.route
-                    } else {
-                        Screen.Login.route
+                    val navController = rememberNavController()
+                    var startDestination by remember { mutableStateOf<String?>(null) } // ✅ 2. 初始為 null
+
+                    // ✅ 3. 改為使用 LaunchedEffect 來決定起始頁面
+                    LaunchedEffect(auth.currentUser) {
+                        val user = auth.currentUser
+                        if (user == null) {
+                            startDestination = Screen.Login.route
+                        } else {
+                            // 檢查使用者資料是否存在
+                            val userExists = repository.checkUserExists(user.uid)
+                            startDestination = if (userExists) {
+                                Screen.OrganizationList.route
+                            } else {
+                                Screen.BasicInfo.route
+                            }
+                        }
                     }
 
-                    NavigationGraph(
-                        navController = navController,
-                        startDestination = startDestination,
-                        onGoogleSignInClick = { onGoogleSignInClick() }
-                    )
+                    // ✅ 4. 等待 startDestination 確定後再顯示 NavigationGraph
+                    if (startDestination != null) {
+                        NavigationGraph(
+                            navController = navController,
+                            startDestination = startDestination!!,
+                            onGoogleSignInClick = { onGoogleSignInClick() }
+                        )
+                    } else {
+                        // 可以顯示一個載入畫面
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
                 }
             }
         }
@@ -109,16 +133,17 @@ class MainActivity : ComponentActivity() {
     }
 
     // 處理 Google 登入結果
-    internal suspend fun handleGoogleSignInResult(data: android.content.Intent?): Result<Unit> {
+    internal suspend fun handleGoogleSignInResult(data: android.content.Intent?): Result<Boolean> {
         return try {
             val credential = oneTapClient.getSignInCredentialFromIntent(data)
             val idToken = credential.googleIdToken
 
             if (idToken != null) {
-                // 使用 ID Token 登入 Firebase
                 val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
-                auth.signInWithCredential(firebaseCredential).await()
-                Result.success(Unit)
+                val authResult = auth.signInWithCredential(firebaseCredential).await()
+                // 判斷是否為新用戶
+                val isNewUser = authResult.additionalUserInfo?.isNewUser ?: false
+                Result.success(isNewUser)
             } else {
                 Result.failure(Exception("無法取得 ID Token"))
             }
