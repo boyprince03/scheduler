@@ -48,7 +48,6 @@ class FirebaseDataSource @Inject constructor(
     // ==================== 組織 ====================
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
-        // ✅ 1. 參照頂層的 users 集合
         val topLevelUserRef = firestore.collection("users").document(user.id)
         val orgUserRef = firestore.collection("organizations/${orgRef.id}/users").document(user.id)
 
@@ -56,20 +55,17 @@ class FirebaseDataSource @Inject constructor(
         val userWithOrgId = user.copy(orgId = orgRef.id)
 
         firestore.runBatch { batch ->
-            // 建立組織
             batch.set(orgRef, orgWithId.toFirestoreMap())
-            // 建立組織內的使用者
-            batch.set(orgUserRef, userWithOrgId.toFirestoreMap())
-            // ✅ 2. 同時在頂層 users 集合中建立或更新使用者資料
-            batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap())
 
-            // 建立預設規則...
+            // ✅ 使用 merge 保留既有資料
+            batch.set(orgUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
+            batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
+
             val rulesCollection = firestore.collection("organizations/${orgRef.id}/schedulingRules")
             getDefaultSchedulingRules().forEach { rule ->
                 val ruleRef = rulesCollection.document()
                 batch.set(ruleRef, rule.toFirestoreMap())
             }
-
         }.await()
         orgRef.id
     }
@@ -103,6 +99,26 @@ class FirebaseDataSource @Inject constructor(
             it.toObject(Organization::class.java)?.copy(id = it.id)
         }
     }
+    /**
+     * 生成唯一的8位組織代碼
+     */
+    suspend fun generateUniqueOrgCode(): String {
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // 排除易混淆字元
+        var code: String
+        var isUnique = false
+
+        do {
+            code = (1..8).map { chars.random() }.joinToString("")
+            // 檢查是否已存在
+            val existingOrg = firestore.collection("organizations")
+                .whereEqualTo("orgCode", code)
+                .get()
+                .await()
+            isUnique = existingOrg.isEmpty
+        } while (!isUnique)
+
+        return code
+    }
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String> = runCatching {
@@ -117,6 +133,18 @@ class FirebaseDataSource @Inject constructor(
         }.await()
         docRef.id
     }
+    /**
+     * 創建組織邀請碼
+     */
+    suspend fun createOrganizationInvite(
+        orgId: String,
+        invite: OrganizationInvite
+    ): Result<String> = runCatching {
+        val docRef = firestore.collection("organizations/$orgId/invites").document()
+        val inviteWithId = invite.copy(id = docRef.id)
+        docRef.set(inviteWithId.toFirestoreMap()).await()
+        docRef.id
+    }
 
     fun observeUsers(orgId: String): Flow<List<User>> {
         return firestore.collection("organizations/$orgId/users")
@@ -127,6 +155,193 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    /**
+     * 監聽組織的邀請碼
+     */
+    fun observeOrganizationInvites(orgId: String): Flow<List<OrganizationInvite>> {
+        return firestore.collection("organizations/$orgId/invites")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(OrganizationInvite::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    /**
+     * 根據邀請碼查詢組織
+     */
+    suspend fun getOrganizationByInviteCode(inviteCode: String): Result<Organization?> = runCatching {
+        // 使用 collectionGroup 查詢所有組織的邀請碼
+        val inviteSnapshot = firestore.collectionGroup("invites")
+            .whereEqualTo("inviteCode", inviteCode)
+            .whereEqualTo("isActive", true)
+            .get()
+            .await()
+
+        if (inviteSnapshot.isEmpty) {
+            return@runCatching null
+        }
+
+        val invite = inviteSnapshot.documents.first()
+            .toObject(OrganizationInvite::class.java) ?: return@runCatching null
+
+        // 檢查邀請是否有效
+        if (!invite.isValid()) {
+            return@runCatching null
+        }
+
+        // 取得組織資訊
+        val orgSnapshot = firestore.collection("organizations")
+            .document(invite.orgId)
+            .get()
+            .await()
+
+        orgSnapshot.toObject(Organization::class.java)?.copy(id = orgSnapshot.id)
+    }
+
+    /**
+     * 驗證並使用邀請碼
+     */
+    suspend fun validateAndUseInviteCode(inviteCode: String): Result<OrganizationInvite> = runCatching {
+        // 1. 在 Transaction 外先執行查詢，找到目標文件的引用
+        val inviteQuery = firestore.collectionGroup("invites")
+            .whereEqualTo("inviteCode", inviteCode)
+            .whereEqualTo("isActive", true)
+            .limit(1)
+            .get()
+            .await()
+
+        if (inviteQuery.isEmpty) {
+            throw IllegalArgumentException("邀請碼不存在或已失效")
+        }
+        val inviteDocRef = inviteQuery.documents.first().reference
+
+        // 2. 在 Transaction 內執行原子的「讀取-修改-寫入」操作
+        firestore.runTransaction { transaction ->
+            val inviteDoc = transaction.get(inviteDocRef)
+            val invite = inviteDoc.toObject(OrganizationInvite::class.java)
+                ?: throw IllegalArgumentException("無法解析邀請碼")
+
+            if (!invite.isValid()) {
+                throw IllegalArgumentException("邀請碼已過期或已達使用上限")
+            }
+
+            // 更新使用次數
+            transaction.update(inviteDoc.reference, "usedCount", invite.usedCount + 1)
+
+            // 將 invite 物件作為 transaction 的結果返回
+            invite
+        }.await()
+    }
+    // ==================== 組織加入申請 ====================
+
+    /**
+     * 創建組織加入申請
+     */
+    suspend fun createOrganizationJoinRequest(
+        request: OrganizationJoinRequest
+    ): Result<String> = runCatching {
+        val docRef = firestore.collection("organizationJoinRequests").document()
+        val requestWithId = request.copy(id = docRef.id)
+        docRef.set(requestWithId.toFirestoreMap()).await()
+        docRef.id
+    }
+    /**
+     * 監聽組織的加入申請
+     */
+    fun observeOrganizationJoinRequests(orgId: String): Flow<List<OrganizationJoinRequest>> {
+        return firestore.collection("organizationJoinRequests")
+            .whereEqualTo("orgId", orgId)
+            .orderBy("requestedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(OrganizationJoinRequest::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    /**
+     * 監聽用戶的加入申請
+     */
+    fun observeUserJoinRequests(userId: String): Flow<List<OrganizationJoinRequest>> {
+        return firestore.collection("organizationJoinRequests")
+            .whereEqualTo("userId", userId)
+            .orderBy("requestedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(OrganizationJoinRequest::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    /**
+     * 停用邀請碼
+     */
+    suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/invites")
+            .document(inviteId)
+            .update("isActive", false)
+            .await()
+    }
+    /**
+     * 審核加入申請
+     */
+    suspend fun processJoinRequest(
+        orgId: String,
+        requestId: String,
+        approve: Boolean,
+        processedBy: String,
+        targetGroupId: String? = null
+    ): Result<Unit> = runCatching {
+        // 1. 在 Batch 操作前，先讀取所有需要的資料
+        val requestRef = firestore.collection("organizationJoinRequests").document(requestId)
+        val requestSnapshot = requestRef.get().await()
+        val request = requestSnapshot.toObject(OrganizationJoinRequest::class.java)
+            ?: throw IllegalArgumentException("找不到申請記錄")
+
+        // 2. 執行 Batch 寫入操作
+        firestore.runBatch { batch ->
+            // 更新申請狀態
+            batch.update(requestRef, mapOf(
+                "status" to if (approve) "approved" else "rejected",
+                "processedBy" to processedBy,
+                "processedAt" to com.google.firebase.Timestamp.now()
+            ))
+
+            if (approve) {
+                // 更新用戶的 orgId
+                val userRef = firestore.collection("users").document(request.userId)
+                batch.update(userRef, "orgId", orgId)
+
+                // 如果有指定群組,將用戶加入群組 (這裡改為直接更新，因為 Batch 中無法讀取)
+                if (targetGroupId != null) {
+                    val groupRef = firestore.collection("organizations/$orgId/groups")
+                        .document(targetGroupId)
+                    // 注意：在 Batch 中，我們使用 FieldValue.arrayUnion 來原子性地添加元素，避免讀取舊列表
+                    batch.update(groupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(request.userId))
+                }
+            }
+        }.await()
+    }
+    /**
+     * 根據組織代碼查詢組織
+     */
+    suspend fun getOrganizationByCode(orgCode: String): Result<Organization?> = runCatching {
+        val snapshot = firestore.collection("organizations")
+            .whereEqualTo("orgCode", orgCode)
+            .get()
+            .await()
+
+        if (snapshot.isEmpty) {
+            return@runCatching null
+        }
+
+        val doc = snapshot.documents.first()
+        doc.toObject(Organization::class.java)?.copy(id = doc.id)
+    }
 
     // ✅ 4. 優化 `checkUserExists`
     suspend fun checkUserExists(userId: String): Boolean {
@@ -136,21 +351,39 @@ class FirebaseDataSource @Inject constructor(
     }
 
     // ✅ 5. 優化 `updateUser`
+    // ✅ 修正: 簡化邏輯,不使用 collectionGroup
     suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         val topLevelUserRef = firestore.collection("users").document(userId)
 
-        // 找到使用者所屬的所有組織，並一併更新 (雖然目前架構一個使用者只在一個組織)
-        val orgUserQuery = firestore.collectionGroup("users").whereEqualTo("id", userId).get().await()
+        // 先取得頂層用戶資料,從中獲取 orgId
+        val userSnapshot = topLevelUserRef.get().await()
+        val orgId = userSnapshot.getString("orgId")
 
         firestore.runBatch { batch ->
-            // 更新頂層文件
-            batch.update(topLevelUserRef, updates)
-            // 更新所有組織內的子集合文件
-            if (!orgUserQuery.isEmpty) {
-                val orgUserDoc = orgUserQuery.documents.first()
-                batch.update(orgUserDoc.reference, updates)
+            // 更新頂層 users 集合
+            batch.set(topLevelUserRef, updates, com.google.firebase.firestore.SetOptions.merge())
+
+            // 如果有 orgId,同時更新組織內的子集合
+            if (!orgId.isNullOrEmpty()) {
+                val orgUserRef = firestore.collection("organizations/$orgId/users").document(userId)
+                batch.set(orgUserRef, updates, com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
+    }
+    /**
+     * 從頂層 users 集合監聽單一用戶
+     */
+    fun observeUserFromTopLevel(userId: String): Flow<User?> {
+        return firestore.collection("users")
+            .document(userId)
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    snapshot.toObject(User::class.java)?.copy(id = snapshot.id)
+                } else {
+                    null
+                }
+            }
     }
 
     // ==================== 群組 ====================

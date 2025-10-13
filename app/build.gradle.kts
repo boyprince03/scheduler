@@ -92,6 +92,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-functions-ktx")
     implementation("com.google.android.gms:play-services-auth:20.7.0")
+    implementation("com.google.firebase:firebase-messaging")
 
     // Room
     val roomVersion = "2.6.1"
@@ -120,4 +121,16 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     implementation("com.google.code.gson:gson:2.10.1")
+    // ==================== QR Code 相關 ====================
+
+    // 方案一：使用 ZXing (推薦，功能完整)
+    // ZXing - QR Code 掃描與生成
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Accompanist - 權限處理
+    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
+
+    // FileProvider (通常已包含在 androidx.core 中)
+    implementation("androidx.core:core-ktx:1.12.0")
 }

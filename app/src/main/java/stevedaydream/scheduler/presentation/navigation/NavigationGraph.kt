@@ -7,7 +7,11 @@ import androidx.navigation.compose.composable
 import stevedaydream.scheduler.presentation.admin.AdminScreen
 import stevedaydream.scheduler.presentation.auth.LoginScreen
 import stevedaydream.scheduler.presentation.group.GroupListScreen
+import stevedaydream.scheduler.presentation.invite.InviteManagementScreen
+import stevedaydream.scheduler.presentation.invite.JoinOrganizationScreen
+import stevedaydream.scheduler.presentation.invite.ReviewJoinRequestsScreen
 import stevedaydream.scheduler.presentation.organization.OrganizationListScreen
+import stevedaydream.scheduler.presentation.qr.QRScannerScreen
 import stevedaydream.scheduler.presentation.schedule.ManpowerScreen
 import stevedaydream.scheduler.presentation.schedule.ManualScheduleScreen
 import stevedaydream.scheduler.presentation.schedule.ScheduleDetailScreen
@@ -50,8 +54,24 @@ sealed class Screen(val route: String) {
     }
     object Admin : Screen("admin") // ✅ 2. 新增 Admin Screen
     object UserProfile : Screen("user_profile")
+    // 邀請管理
+    object InviteManagement : Screen("invite_management/{orgId}") {
+        fun createRoute(orgId: String) = "invite_management/$orgId"
+    }
 
+    // 加入組織
+    object JoinOrganization : Screen("join_organization")
+
+    // 審核申請
+    object ReviewRequests : Screen("review_requests/{orgId}") {
+        fun createRoute(orgId: String) = "review_requests/$orgId"
+    }
+
+    // QR Scanner
+    object QRScanner : Screen("qr_scanner")
 }
+
+
 
 @Composable
 fun NavigationGraph(
@@ -88,6 +108,46 @@ fun NavigationGraph(
                         popUpTo(Screen.BasicInfo.route) { inclusive = true }
                     }
                 }
+            )
+        }
+        // 邀請管理
+        composable(Screen.InviteManagement.route) { backStackEntry ->
+            val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
+            InviteManagementScreen(
+                orgId = orgId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // 加入組織
+        composable(Screen.JoinOrganization.route) {
+            JoinOrganizationScreen(
+                navController = navController, // <-- 傳入 navController
+                onJoinSuccess = { navController.popBackStack() },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // 審核申請
+        composable(Screen.ReviewRequests.route) { backStackEntry ->
+            val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
+            ReviewJoinRequestsScreen(
+                orgId = orgId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // QR Scanner
+        composable(Screen.QRScanner.route) {
+            QRScannerScreen(
+                onCodeScanned = { code ->
+                    // 導航回加入組織頁面並帶入掃描結果
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("scanned_code", code)
+                    navController.popBackStack()
+                },
+                onBackClick = { navController.popBackStack() }
             )
         }
 
@@ -191,6 +251,18 @@ fun NavigationGraph(
         // <-- 3. 新增 UserProfileScreen 的 composable 區塊
         composable(Screen.UserProfile.route) {
             UserProfileScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        // 新增 composable
+        composable(Screen.QRScanner.route) {
+            QRScannerScreen(
+                onCodeScanned = { code ->
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("scanned_code", code)
+                    navController.popBackStack()
+                },
                 onBackClick = { navController.popBackStack() }
             )
         }

@@ -177,6 +177,12 @@ interface SchedulingRuleDao {
 
     @Query("DELETE FROM scheduling_rules WHERE orgId = :orgId")
     suspend fun deleteRulesByOrg(orgId: String)
+
+    @Query("SELECT * FROM scheduling_rules WHERE orgId = :orgId")
+    suspend fun getAllRulesByOrg(orgId: String): List<SchedulingRule>
+
+    @Query("DELETE FROM scheduling_rules WHERE id IN (:ruleIds)")
+    suspend fun deleteRulesByIds(ruleIds: List<String>)
 }
 
 @Dao
@@ -215,6 +221,77 @@ interface ManpowerPlanDao {
     suspend fun insertPlan(plan: ManpowerPlan)
 }
 
+// ✨ ==================== 新增: 組織邀請碼 DAO ====================
+@Dao
+interface OrganizationInviteDao {
+    @Query("SELECT * FROM organization_invites WHERE orgId = :orgId ORDER BY createdAt DESC")
+    fun getInvitesByOrg(orgId: String): Flow<List<OrganizationInvite>>
+
+    @Query("SELECT * FROM organization_invites WHERE inviteCode = :inviteCode")
+    suspend fun getInviteByCode(inviteCode: String): OrganizationInvite?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInvite(invite: OrganizationInvite)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInvites(invites: List<OrganizationInvite>)
+
+    @Query("UPDATE organization_invites SET isActive = :isActive WHERE id = :inviteId")
+    suspend fun updateInviteStatus(inviteId: String, isActive: Boolean)
+
+    @Query("UPDATE organization_invites SET usedCount = :usedCount WHERE id = :inviteId")
+    suspend fun updateInviteUsedCount(inviteId: String, usedCount: Int)
+
+    @Query("DELETE FROM organization_invites WHERE orgId = :orgId")
+    suspend fun deleteInvitesByOrg(orgId: String)
+}
+
+// ✨ ==================== 新增: 組織加入申請 DAO ====================
+@Dao
+interface OrganizationJoinRequestDao {
+    @Query("SELECT * FROM organization_join_requests WHERE orgId = :orgId ORDER BY requestedAt DESC")
+    fun getRequestsByOrg(orgId: String): Flow<List<OrganizationJoinRequest>>
+
+    @Query("SELECT * FROM organization_join_requests WHERE userId = :userId ORDER BY requestedAt DESC")
+    fun getRequestsByUser(userId: String): Flow<List<OrganizationJoinRequest>>
+
+    @Query("SELECT * FROM organization_join_requests WHERE id = :requestId")
+    suspend fun getRequest(requestId: String): OrganizationJoinRequest?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRequest(request: OrganizationJoinRequest)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRequests(requests: List<OrganizationJoinRequest>)
+
+    @Update
+    suspend fun updateRequest(request: OrganizationJoinRequest)
+
+    @Query("DELETE FROM organization_join_requests WHERE orgId = :orgId")
+    suspend fun deleteRequestsByOrg(orgId: String)
+
+    @Query("DELETE FROM organization_join_requests WHERE userId = :userId")
+    suspend fun deleteRequestsByUser(userId: String)
+}
+
+// ✨ ==================== 新增: 組別加入申請 DAO ====================
+@Dao
+interface GroupJoinRequestDao {
+    @Query("SELECT * FROM group_join_requests WHERE orgId = :orgId ORDER BY requestedAt DESC")
+    fun getRequestsByOrg(orgId: String): Flow<List<GroupJoinRequest>>
+
+    @Query("SELECT * FROM group_join_requests WHERE userId = :userId ORDER BY requestedAt DESC")
+    fun getRequestsByUser(userId: String): Flow<List<GroupJoinRequest>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRequest(request: GroupJoinRequest)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRequests(requests: List<GroupJoinRequest>)
+
+    @Query("DELETE FROM group_join_requests WHERE orgId = :orgId")
+    suspend fun deleteRequestsByOrg(orgId: String)
+}
 
 // ==================== Database ====================
 
@@ -228,9 +305,12 @@ interface ManpowerPlanDao {
         SchedulingRule::class,
         Schedule::class,
         Assignment::class,
-        ManpowerPlan::class
+        ManpowerPlan::class,
+        OrganizationInvite::class,        // ✨ 新增
+        OrganizationJoinRequest::class,   // ✨ 新增
+        GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 7,
+    version = 9, // ✨ 版本號從 8 更新為 9
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -244,6 +324,9 @@ abstract class SchedulerDatabase : RoomDatabase() {
     abstract fun scheduleDao(): ScheduleDao
     abstract fun assignmentDao(): AssignmentDao
     abstract fun manpowerPlanDao(): ManpowerPlanDao
+    abstract fun organizationInviteDao(): OrganizationInviteDao           // ✨ 新增
+    abstract fun organizationJoinRequestDao(): OrganizationJoinRequestDao // ✨ 新增
+    abstract fun groupJoinRequestDao(): GroupJoinRequestDao               // ✨ 新增
 
     /**
      * 清除資料庫中的所有表格資料

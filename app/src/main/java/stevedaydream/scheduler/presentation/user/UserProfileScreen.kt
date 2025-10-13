@@ -29,7 +29,11 @@ fun UserProfileScreen(
     val context = LocalContext.current
     var showGroupSelectorDialog by remember { mutableStateOf(false) }
 
-    // ✅ 1. 修改 LaunchedEffect 來監聽儲存結果
+    // ✅ 添加 Debug Log
+    LaunchedEffect(uiState) {
+        println("🎨 [UI] isLoading=${uiState.isLoading}, currentUser=${uiState.currentUser?.name}")
+    }
+
     LaunchedEffect(uiState.requestResult, uiState.saveResult) {
         uiState.requestResult?.onSuccess {
             context.showToast("申請已送出，請等候管理員核准")
@@ -60,21 +64,19 @@ fun UserProfileScreen(
             )
         }
     ) { padding ->
-        if (uiState.isLoading) {
-            LoadingIndicator(modifier = Modifier.padding(padding))
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    // ✅ 2. 傳遞更多參數給 UserInfoCard
-                    uiState.currentUser?.let { user ->
+        // ✅ 添加狀態顯示
+        Column(modifier = Modifier.padding(padding)) {
+            if (uiState.isLoading) {
+                LoadingIndicator()
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item {
                         UserInfoCard(
-                            user = user,
+                            user = uiState.currentUser,
                             uiState = uiState,
                             onNameChange = viewModel::onNameChange,
                             onEmployeeIdChange = viewModel::onEmployeeIdChange,
@@ -83,13 +85,13 @@ fun UserProfileScreen(
                             onSave = viewModel::saveUserProfile
                         )
                     }
-                }
-                item {
-                    OrganizationInfoCard(
-                        organizationName = uiState.organization?.orgName,
-                        groupName = uiState.currentGroup?.groupName,
-                        onClick = { showGroupSelectorDialog = true }
-                    )
+                    item {
+                        OrganizationInfoCard(
+                            organizationName = uiState.organization?.orgName,
+                            groupName = uiState.currentGroup?.groupName,
+                            onClick = { showGroupSelectorDialog = true }
+                        )
+                    }
                 }
             }
         }
@@ -110,7 +112,7 @@ fun UserProfileScreen(
 
 @Composable
 private fun UserInfoCard(
-    user: stevedaydream.scheduler.data.model.User,
+    user: stevedaydream.scheduler.data.model.User?,
     uiState: UserProfileUiState,
     onNameChange: (String) -> Unit,
     onEmployeeIdChange: (String) -> Unit,
@@ -118,12 +120,20 @@ private fun UserInfoCard(
     onCancelEdit: () -> Unit,
     onSave: () -> Unit
 ) {
+    // ✅ 新增: 當 user 變化時,更新輸入框
+    LaunchedEffect(user) {
+        if (user != null && !uiState.isEditing) {
+            onNameChange(user.name)
+            onEmployeeIdChange(user.employeeId)
+        }
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // -- 卡片標頭 --
+            // ... 其餘代碼保持不變
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -133,8 +143,7 @@ private fun UserInfoCard(
                     text = "基本資料",
                     style = MaterialTheme.typography.titleMedium
                 )
-                // ✅ 3. 只有在非編輯模式下顯示編輯按鈕
-                if (!uiState.isEditing) {
+                if (user != null && !uiState.isEditing) {
                     IconButton(onClick = onEnableEdit) {
                         Icon(Icons.Default.Edit, contentDescription = "編輯資料")
                     }
@@ -142,53 +151,59 @@ private fun UserInfoCard(
             }
             Divider()
 
-            // -- 姓名 --
-            if (uiState.isEditing) {
-                OutlinedTextField(
-                    value = uiState.nameInput,
-                    onValueChange = onNameChange,
-                    label = { Text("姓名") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+            if (user == null) {
+                Text(
+                    text = "尚未完成基本資料設定",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
             } else {
-                InfoRow(icon = Icons.Default.Person, label = "姓名", value = user.name)
-            }
+                // -- 姓名 --
+                if (uiState.isEditing) {
+                    OutlinedTextField(
+                        value = uiState.nameInput,
+                        onValueChange = onNameChange,
+                        label = { Text("姓名") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                } else {
+                    InfoRow(icon = Icons.Default.Person, label = "姓名", value = user.name)
+                }
 
-            // -- Email (不可編輯) --
-            InfoRow(icon = Icons.Default.Email, label = "Email", value = user.email)
+                InfoRow(icon = Icons.Default.Email, label = "Email", value = user.email)
 
-            // -- 員工編號 --
-            if (uiState.isEditing) {
-                OutlinedTextField(
-                    value = uiState.employeeIdInput,
-                    onValueChange = onEmployeeIdChange,
-                    label = { Text("員工編號 (選填)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            } else {
-                InfoRow(icon = Icons.Default.Badge, label = "員工編號", value = user.employeeId.ifEmpty { "尚未設定" })
-            }
+                // -- 員工編號 --
+                if (uiState.isEditing) {
+                    OutlinedTextField(
+                        value = uiState.employeeIdInput,
+                        onValueChange = onEmployeeIdChange,
+                        label = { Text("員工編號 (選填)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                } else {
+                    InfoRow(icon = Icons.Default.Badge, label = "員工編號", value = user.employeeId.ifEmpty { "尚未設定" })
+                }
 
-
-            // ✅ 4. 新增儲存與取消按鈕
-            if (uiState.isEditing) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onCancelEdit, enabled = !uiState.isSaving) {
-                        Text("取消")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = onSave, enabled = !uiState.isSaving) {
-                        if (uiState.isSaving) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text("儲存")
+                if (uiState.isEditing) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onCancelEdit, enabled = !uiState.isSaving) {
+                            Text("取消")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = onSave, enabled = !uiState.isSaving) {
+                            if (uiState.isSaving) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("儲存")
+                            }
                         }
                     }
                 }
@@ -197,7 +212,6 @@ private fun UserInfoCard(
     }
 }
 
-// ... (OrganizationInfoCard 和 InfoRow 保持不變) ...
 @Composable
 private fun OrganizationInfoCard(
     organizationName: String?,
@@ -208,14 +222,14 @@ private fun OrganizationInfoCard(
         Text("所屬單位", style = MaterialTheme.typography.titleMedium)
         InfoCard(
             title = "公司",
-            description = organizationName ?: "尚未加入任何公司",
+            description = organizationName ?: "尚未加入或創建組織", // ✅ 修正提示文字
             icon = Icons.Default.Business
         )
         InfoCard(
             title = "組別",
-            description = groupName ?: "尚未加入任何組別",
+            description = groupName ?: "尚未加入組別", // ✅ 修正提示文字
             icon = Icons.Default.Groups,
-            onClick = onClick
+            onClick = if (organizationName != null) onClick else null // ✅ 只有加入組織後才能點擊
         )
     }
 }
@@ -238,7 +252,7 @@ private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
         Text(text = value, style = MaterialTheme.typography.bodyMedium)
     }
 }
-// ... (JoinGroupDialog 保持不變) ...
+
 @Composable
 private fun JoinGroupDialog(
     allGroups: List<Group>,

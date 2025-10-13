@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.Date
 import javax.inject.Inject
+import com.google.firebase.firestore.FirebaseFirestore
 
 data class LoginUiState(
     val isLoading: Boolean = false,
@@ -19,7 +21,8 @@ data class LoginUiState(
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore // ✅ 注入 Firestore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -30,7 +33,27 @@ class LoginViewModel @Inject constructor(
     }
 
     fun onLoginSuccess(isNewUser: Boolean) {
-        _uiState.update { it.copy(isLoading = false, loginResult = Pair(true, isNewUser)) }
+        viewModelScope.launch {
+            val currentUser = auth.currentUser
+            if (currentUser != null && isNewUser) {
+                // ✅ 新用戶：確保在頂層 users 集合中建立基本資料
+                firestore.collection("users").document(currentUser.uid)
+                    .set(mapOf(
+                        "id" to currentUser.uid,
+                        "email" to (currentUser.email ?: ""),
+                        "name" to (currentUser.displayName ?: ""),
+                        "role" to "member",
+                        "employeeId" to "",
+                        "orgId" to "",
+                        "joinedAt" to Date()
+                    ), com.google.firebase.firestore.SetOptions.merge())
+                    .await()
+
+                println("✅ [Login] 已建立新用戶基本資料")
+            }
+
+            _uiState.update { it.copy(isLoading = false, loginResult = Pair(true, isNewUser)) }
+        }
     }
 
     fun onLoginError(message: String) {

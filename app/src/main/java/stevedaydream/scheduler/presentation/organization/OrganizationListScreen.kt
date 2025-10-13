@@ -9,8 +9,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AssignmentInd
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Logout // ✅ 引入圖示
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
@@ -28,7 +30,7 @@ import stevedaydream.scheduler.presentation.navigation.Screen // ✅ 引入 Scre
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun OrganizationListScreen(
-    navController: NavHostController, // ✅ 傳入 NavController
+    navController: NavHostController,
     viewModel: OrganizationListViewModel = hiltViewModel(),
     onOrganizationClick: (String) -> Unit,
     onAdminClick: () -> Unit
@@ -36,17 +38,15 @@ fun OrganizationListScreen(
     val organizations by viewModel.organizations.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
-    var showLogoutDialog by remember { mutableStateOf(false) } // ✅ 新增狀態來控制登出對話框
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadOrganizations()
     }
     val pullRefreshState = rememberPullRefreshState(isRefreshing, { viewModel.refresh() })
 
-    // ✅ 監聽登出事件
     LaunchedEffect(Unit) {
         viewModel.logoutEvent.collect {
-            // 登出成功後導航至登入頁面，並清除所有舊的頁面堆疊
             navController.navigate(Screen.Login.route) {
                 popUpTo(navController.graph.startDestinationId) {
                     inclusive = true
@@ -55,7 +55,6 @@ fun OrganizationListScreen(
         }
     }
 
-    // ✅ 顯示登出確認對話框
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
@@ -79,16 +78,31 @@ fun OrganizationListScreen(
         )
     }
 
-    // 假設 আপনি從 ViewModel 獲取了當前使用者的資訊
     val currentUser by viewModel.currentUser.collectAsState()
+    // 建立一個本地的、不可變的變數來進行判斷和使用
+    val user = currentUser
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("我的組織") },
                 actions = {
-                    if (currentUser?.role == "superuser") {
-                        // ✅ 2. 修改 onClick，呼叫新的導航事件
+                    IconButton(onClick = {
+                        navController.navigate(Screen.JoinOrganization.route)
+                    }) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "加入組織")
+                    }
+
+                    // 使用本地變數 `user` 進行判斷
+                    if (user?.role == "org_admin" && user.orgId.isNotEmpty()) {
+                        IconButton(onClick = {
+                            // 在 lambda 中也使用 `user`
+                            navController.navigate(Screen.ReviewRequests.createRoute(user.orgId))
+                        }) {
+                            Icon(Icons.Default.AssignmentInd, contentDescription = "審核申請")
+                        }
+                    }
+                    if (user?.role == "superuser") {
                         IconButton(onClick = onAdminClick) {
                             Icon(
                                 imageVector = Icons.Default.AdminPanelSettings,
@@ -102,7 +116,6 @@ fun OrganizationListScreen(
                             contentDescription = "登出"
                         )
                     }
-                    // 新增個人資料頁面入口
                     IconButton(onClick = { navController.navigate(Screen.UserProfile.route) }) {
                         Icon(
                             imageVector = Icons.Default.AccountCircle,

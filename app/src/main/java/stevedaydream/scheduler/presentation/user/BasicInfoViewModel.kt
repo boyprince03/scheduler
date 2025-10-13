@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+import java.util.Date
 import javax.inject.Inject
 
 data class BasicInfoUiState(
@@ -51,11 +52,18 @@ class BasicInfoViewModel @Inject constructor(
                 return@launch
             }
 
+            // ✅ 修正: 確保包含所有必要欄位
             val result = repository.updateUser(
                 userId = currentUser.uid,
                 updates = mapOf(
                     "name" to _uiState.value.name.trim(),
-                    "employeeId" to _uiState.value.employeeId.trim()
+                    "employeeId" to _uiState.value.employeeId.trim(),
+                    // ✅ 新增: 確保 email 也被儲存
+                    "email" to (currentUser.email ?: ""),
+                    // ✅ 新增: 設定預設角色
+                    "role" to "member",
+                    // ✅ 新增: 記錄加入時間
+                    "joinedAt" to Date()
                 )
             )
 
@@ -66,4 +74,5 @@ class BasicInfoViewModel @Inject constructor(
             }
         }
     }
+
 }

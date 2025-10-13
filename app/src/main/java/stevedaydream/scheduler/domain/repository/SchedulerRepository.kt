@@ -5,20 +5,87 @@ import stevedaydream.scheduler.data.model.*
 
 interface SchedulerRepository {
     // ==================== 組織 ====================
-    // ✅ 修改參數，加入 user: User
     suspend fun createOrganization(org: Organization, user: User): Result<String>
     fun observeOrganization(orgId: String): Flow<Organization?>
-    fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> // <-- 新增這一行
-    suspend fun refreshOrganizations(ownerId: String): Result<Unit> // <-- 新增這一行
+    fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
+    suspend fun refreshOrganizations(ownerId: String): Result<Unit>
+
+    // ==================== 組織邀請管理 ====================
+    /**
+     * 生成組織邀請碼
+     */
+    suspend fun createOrganizationInvite(
+        orgId: String,
+        invite: OrganizationInvite
+    ): Result<String>
+
+    /**
+     * 監聽組織的所有邀請碼
+     */
+    fun observeOrganizationInvites(orgId: String): Flow<List<OrganizationInvite>>
+
+    /**
+     * 根據邀請碼查詢組織資訊
+     */
+    suspend fun getOrganizationByInviteCode(inviteCode: String): Result<Organization?>
+
+    /**
+     * 驗證並使用邀請碼
+     */
+    suspend fun validateAndUseInviteCode(inviteCode: String): Result<OrganizationInvite>
+
+    /**
+     * 停用邀請碼
+     */
+    suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit>
+
+    // ==================== 組織加入申請 ====================
+    /**
+     * 創建組織加入申請
+     */
+    suspend fun createOrganizationJoinRequest(
+        request: OrganizationJoinRequest
+    ): Result<String>
+
+    /**
+     * 監聽組織的所有加入申請
+     */
+    fun observeOrganizationJoinRequests(orgId: String): Flow<List<OrganizationJoinRequest>>
+
+    /**
+     * 監聽用戶的加入申請狀態
+     */
+    fun observeUserJoinRequests(userId: String): Flow<List<OrganizationJoinRequest>>
+
+    /**
+     * 審核加入申請 (批准/拒絕)
+     */
+    suspend fun processJoinRequest(
+        orgId: String,
+        requestId: String,
+        approve: Boolean,
+        processedBy: String,
+        targetGroupId: String? = null
+    ): Result<Unit>
+
+    /**
+     * 生成組織唯一代碼
+     */
+    suspend fun generateUniqueOrgCode(): String
+
+    /**
+     * 根據組織代碼查詢組織
+     */
+    suspend fun getOrganizationByCode(orgCode: String): Result<Organization?>
 
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String>
     fun observeUsers(orgId: String): Flow<List<User>>
     fun observeUser(userId: String): Flow<User?>
-    fun observeAdminStatus(userId: String): Flow<Boolean> // ✅ 新增這一行
-    suspend fun checkUserExists(userId: String): Boolean // ✅ 新增
-    suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> // ✅ 新增
+    fun observeAdminStatus(userId: String): Flow<Boolean>
+    suspend fun checkUserExists(userId: String): Boolean
+    suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit>
 
     // ==================== 群組 ====================
     suspend fun createGroup(orgId: String, group: Group): Result<String>
@@ -34,13 +101,13 @@ interface SchedulerRepository {
     suspend fun releaseScheduler(orgId: String, groupId: String): Result<Unit>
 
     // ==================== 班別類型 ====================
-    // 🔽🔽🔽 修改與新增 🔽🔽🔽
+
     fun observeShiftTypeTemplates(): Flow<List<ShiftType>>
     fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>>
     suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String>
     suspend fun updateShiftType(orgId: String, shiftTypeId: String, updates: Map<String, Any>): Result<Unit>
     suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit>
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
 
     // ==================== 請求 ====================
@@ -49,7 +116,7 @@ interface SchedulerRepository {
     fun observeUserRequests(userId: String): Flow<List<Request>>
 
     // ==================== 排班規則 ====================
-    // 🔽🔽🔽 修改與新增 🔽🔽🔽
+
     // Superuser: 管理規則範本
     fun observeRuleTemplates(): Flow<List<SchedulingRule>>
     suspend fun addRuleTemplate(rule: SchedulingRule): Result<String>
@@ -68,7 +135,7 @@ interface SchedulerRepository {
     // 通用: 更新與刪除組織內的規則
     suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit>
     suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit>
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
+
 
 
     // ==================== 班表 ====================
