@@ -241,7 +241,7 @@ fun InviteCard(
                     ) {
                         Icon(Icons.Default.QrCode, contentDescription = null)
                         Spacer(Modifier.width(width = 4.dp))
-                        Text("顯示QR")
+//                        Text("顯示QR")
                     }
                 }
 
@@ -251,7 +251,7 @@ fun InviteCard(
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
-                    Text("複製")
+//                    Text("複製")
                 }
 
                 if (invite.isValid()) {
@@ -264,7 +264,7 @@ fun InviteCard(
                     ) {
                         Icon(Icons.Default.Cancel, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("停用")
+//                        Text("停用")
                     }
                 }
             }

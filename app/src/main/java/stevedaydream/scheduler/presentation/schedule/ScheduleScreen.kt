@@ -1,3 +1,4 @@
+// scheduler/presentation/schedule/ScheduleScreen.kt
 package stevedaydream.scheduler.presentation.schedule
 
 import androidx.compose.foundation.clickable
@@ -28,7 +29,6 @@ fun ScheduleScreen(
     onNavigateToManualSchedule: (String, String, String) -> Unit,
     onNavigateToShiftTypeSettings: (String, String) -> Unit,
     onNavigateToScheduleDetail: (String, String, String) -> Unit,
-    // ✅ 1. 將 onNavigateToManpower 參數加回來
     onNavigateToManpower: (String, String, String) -> Unit
 ) {
     val group by viewModel.group.collectAsState()
@@ -52,14 +52,12 @@ fun ScheduleScreen(
                 title = { Text(group?.groupName ?: "排班") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        // ✅ 3. 修正 ImageVector 警告
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (isScheduler) {
                         IconButton(onClick = { viewModel.releaseScheduler() }) {
-                            // ✅ 3. 修正 ImageVector 警告
                             Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權")
                         }
                     }
@@ -144,7 +142,6 @@ fun ScheduleScreen(
                             Text("手動排班")
                         }
 
-                        // ✅ 2. 修正 onClick 的 TODO，呼叫正確的導航函式
                         OutlinedButton(
                             onClick = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                             modifier = Modifier.fillMaxWidth()

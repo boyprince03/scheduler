@@ -1,3 +1,4 @@
+// scheduler/data/repository/SchedulerRepositoryImpl.kt
 package stevedaydream.scheduler.data.repository
 
 import com.google.firebase.auth.FirebaseAuth
@@ -11,9 +12,6 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.util.TestDataGenerator
 import javax.inject.Inject
 import javax.inject.Singleton
-
-
-
 
 @Singleton
 class SchedulerRepositoryImpl @Inject constructor(
@@ -151,18 +149,11 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.createUser(orgId, user)
     }
 
+    // 修正開始：由於 `UserDao` 中的查詢已被移除，此函式不再需要，由其他 ViewModel 直接從 Firestore 讀取
     override fun observeUsers(orgId: String): Flow<List<User>> {
-        // 啟動同步監聽
-        externalScope.launch {
-            remoteDataSource.observeUsers(orgId)
-                .collect { users ->
-                    database.userDao().deleteUsersByOrg(orgId)
-                    database.userDao().insertUsers(users)
-                }
-        }
-        // 返回本地資料
-        return database.userDao().getUsersByOrg(orgId)
+        return remoteDataSource.observeUsers(orgId)
     }
+    // 修正結束
 
 
     override fun observeUser(userId: String): Flow<User?> {

@@ -1,3 +1,4 @@
+// 修改開始
 package stevedaydream.scheduler.presentation.invite
 
 import androidx.lifecycle.ViewModel
@@ -15,6 +16,7 @@ import stevedaydream.scheduler.data.model.Group
 import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.data.model.OrganizationJoinRequest
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+
 import javax.inject.Inject
 
 // ==================== JoinOrganizationViewModel ====================
@@ -93,11 +95,19 @@ class JoinOrganizationViewModel @Inject constructor(
             val inviteResult = repository.validateAndUseInviteCode(inviteCode)
 
             inviteResult.onSuccess { invite ->
+                // ✅ 修正點：將 displayName 存為本地變數以啟用智慧轉型 (Smart Cast)
+                val displayName = currentUser.displayName
+                val userName = if (displayName.isNullOrBlank()) {
+                    currentUser.email ?: "未命名使用者"
+                } else {
+                    displayName // 現在編譯器知道 displayName 在此處不為 null
+                }
+
                 val request = OrganizationJoinRequest(
                     orgId = org.id,
                     orgName = org.displayName.ifEmpty { org.orgName },
                     userId = currentUser.uid,
-                    userName = currentUser.displayName ?: "",
+                    userName = userName,
                     userEmail = currentUser.email ?: "",
                     inviteCode = inviteCode,
                     joinMethod = when (invite.inviteType) {
@@ -132,3 +142,4 @@ class JoinOrganizationViewModel @Inject constructor(
         // 導航到 QR Scanner (由 UI 層處理)
     }
 }
+// 修改結束

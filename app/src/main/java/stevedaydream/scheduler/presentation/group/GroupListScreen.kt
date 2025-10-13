@@ -1,3 +1,4 @@
+// scheduler/presentation/group/GroupListScreen.kt
 package stevedaydream.scheduler.presentation.group
 
 import androidx.compose.foundation.clickable
@@ -20,7 +21,8 @@ fun GroupListScreen(
     orgId: String,
     viewModel: GroupListViewModel = hiltViewModel(),
     onGroupClick: (String) -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onNavigateToInviteManagement: (String) -> Unit // <-- 新增導航參數
 ) {
     val groups by viewModel.groups.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -36,6 +38,11 @@ fun GroupListScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onNavigateToInviteManagement(orgId) }) {
+                        Icon(Icons.Default.GroupAdd, contentDescription = "邀請成員")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

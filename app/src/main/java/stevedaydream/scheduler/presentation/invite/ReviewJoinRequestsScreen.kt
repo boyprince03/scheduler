@@ -70,8 +70,8 @@ fun ReviewJoinRequestsScreen(
     var selectedGroupId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(orgId) {
-        viewModel.loadRequests(orgId)
-        viewModel.loadGroups(orgId)
+        viewModel.loadDataForUser(orgId) // 改成呼叫這個新函式
+
     }
 
     LaunchedEffect(viewModel.reviewResult) {
@@ -203,14 +203,17 @@ fun ReviewJoinRequestsScreen(
                     )
 
                     // 群組選擇
-                    if (groups.isEmpty()) {
+                    // 從 viewModel.groups 中過濾出屬於當前 request 的群組
+                    val relevantGroups = groups.filter { it.orgId == request.orgId }
+
+                    if (relevantGroups.isEmpty()) {
                         Text(
                             "此組織尚無群組",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        groups.forEach { group ->
+                        relevantGroups.forEach { group ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

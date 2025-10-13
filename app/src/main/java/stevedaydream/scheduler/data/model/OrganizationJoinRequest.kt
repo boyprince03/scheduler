@@ -1,9 +1,11 @@
+// scheduler/data/model/OrganizationJoinRequest.kt
+
 package stevedaydream.scheduler.data.model
 
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import java.util.Date // ✅ 1. 匯入 Date
+import java.util.Date
 
 // ==================== 組織加入申請 ====================
 @Entity(tableName = "organization_join_requests")
@@ -14,14 +16,14 @@ data class OrganizationJoinRequest(
     val userId: String = "",
     val userName: String = "",
     val userEmail: String = "",
-    val inviteCode: String? = null, // 使用的邀請碼
-    val joinMethod: String = "manual", // manual, qrcode, email
-    val status: String = "pending", // pending, approved, rejected
+    val inviteCode: String? = null,
+    val joinMethod: String = "manual",
+    val status: String = "pending",
     val requestedAt: Date = Date(),
     val processedBy: String? = null,
     val processedAt: Date? = null,
-    val targetGroupId: String? = null, // 指定要加入的群組
-    val message: String = "" // 申請訊息
+    val targetGroupId: String? = null,
+    val message: String = ""
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
         put("orgId", orgId)

@@ -1,3 +1,4 @@
+// scheduler/presentation/navigation/auth/LoginViewModel.kt
 package stevedaydream.scheduler.presentation.auth
 
 import androidx.lifecycle.ViewModel
@@ -22,7 +23,7 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore // ✅ 注入 Firestore
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -36,18 +37,23 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             val currentUser = auth.currentUser
             if (currentUser != null && isNewUser) {
-                // ✅ 新用戶：確保在頂層 users 集合中建立基本資料
+                // --- 修改開始 ---
+                // 修正：新用戶資料結構，使用 orgIds 和 currentOrgId
+                val newUserMap = mapOf(
+                    "id" to currentUser.uid,
+                    "email" to (currentUser.email ?: ""),
+                    "name" to (currentUser.displayName ?: ""),
+                    "role" to "member",
+                    "employeeId" to "",
+                    "orgIds" to emptyList<String>(), // 使用 orgIds 陣列
+                    "currentOrgId" to "",             // 初始化 currentOrgId
+                    "joinedAt" to Date()
+                )
+
                 firestore.collection("users").document(currentUser.uid)
-                    .set(mapOf(
-                        "id" to currentUser.uid,
-                        "email" to (currentUser.email ?: ""),
-                        "name" to (currentUser.displayName ?: ""),
-                        "role" to "member",
-                        "employeeId" to "",
-                        "orgId" to "",
-                        "joinedAt" to Date()
-                    ), com.google.firebase.firestore.SetOptions.merge())
+                    .set(newUserMap, com.google.firebase.firestore.SetOptions.merge())
                     .await()
+                // --- 修改結束 ---
 
                 println("✅ [Login] 已建立新用戶基本資料")
             }
@@ -64,9 +70,8 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                // ✅ 修正點: 取得 AuthResult 並傳遞 isNewUser
                 val result = auth.signInAnonymously().await()
-                val isNewUser = result.additionalUserInfo?.isNewUser ?: true // 匿名登入預設為新用戶
+                val isNewUser = result.additionalUserInfo?.isNewUser ?: true
                 onLoginSuccess(isNewUser)
             } catch (e: Exception) {
                 onLoginError(e.localizedMessage ?: "Anonymous sign-in failed")

@@ -106,8 +106,10 @@ interface OrganizationDao {
 
 @Dao
 interface UserDao {
-    @Query("SELECT * FROM users WHERE orgId = :orgId")
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 1 ▼▼▼▼▼▼▼▼▼▼▼▼
+    @Query("SELECT * FROM users WHERE orgIds LIKE '%' || :orgId || '%'")
     fun getUsersByOrg(orgId: String): Flow<List<User>>
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改點 1 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     @Query("SELECT * FROM users WHERE id = :userId")
     fun getUser(userId: String): Flow<User?>
@@ -118,9 +120,12 @@ interface UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: User)
 
-    @Query("DELETE FROM users WHERE orgId = :orgId")
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 2 ▼▼▼▼▼▼▼▼▼▼▼▼
+    @Query("DELETE FROM users WHERE orgIds LIKE '%' || :orgId || '%'")
     suspend fun deleteUsersByOrg(orgId: String)
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改點 2 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
+
 
 @Dao
 interface GroupDao {
@@ -310,7 +315,7 @@ interface GroupJoinRequestDao {
         OrganizationJoinRequest::class,   // ✨ 新增
         GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 9, // ✨ 版本號從 8 更新為 9
+    version = 10, // ✨ 版本號從 8 更新為 9
     exportSchema = false
 )
 @TypeConverters(Converters::class)

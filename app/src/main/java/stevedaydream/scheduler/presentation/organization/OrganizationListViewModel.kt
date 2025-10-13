@@ -1,3 +1,4 @@
+// scheduler/presentation/organization/OrganizationListViewModel.kt
 package stevedaydream.scheduler.presentation.organization
 
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import stevedaydream.scheduler.data.model.Organization
+import stevedaydream.scheduler.data.model.OrganizationJoinRequest
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import java.util.*
@@ -20,38 +22,79 @@ class OrganizationListViewModel @Inject constructor(
     private val auth: FirebaseAuth
 ) : ViewModel() {
 
-    private val _organizations = MutableStateFlow<List<Organization>>(emptyList())
-    val organizations: StateFlow<List<Organization>> = _organizations.asStateFlow()
-
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    // 🔽🔽🔽 新增這兩行 🔽🔽🔽
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
-    fun loadOrganizations() {
+    private val _pendingRequests = MutableStateFlow<List<OrganizationJoinRequest>>(emptyList())
+    val pendingRequests: StateFlow<List<OrganizationJoinRequest>> = _pendingRequests.asStateFlow()
+
+    private val ownedOrganizationsFlow = auth.currentUser?.uid?.let { ownerId ->
+        repository.observeOrganizationsByOwner(ownerId)
+    } ?: flowOf(emptyList())
+
+    // --- 修改開始 ---
+    private val joinedOrganizationsFlow: Flow<List<Organization>> = _currentUser
+        .filterNotNull()
+        .flatMapLatest { user ->
+            // 從 user 物件中取得 orgIds 列表，並過濾掉任何空的字串
+            val orgIds = user.orgIds.filter { it.isNotBlank() }
+            if (orgIds.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                val orgFlows = orgIds.map { orgId ->
+                    repository.observeOrganization(orgId)
+                }
+                combine(orgFlows) { organizations ->
+                    organizations.filterNotNull()
+                }
+            }
+        }
+    // --- 修改結束 ---
+
+    val allOrganizations: StateFlow<List<Organization>> =
+        combine(ownedOrganizationsFlow, joinedOrganizationsFlow) { owned, joined ->
+            (owned + joined).distinctBy { it.id }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+
+    init {
+        loadData()
+    }
+
+    private fun loadData() {
+        val currentUid = auth.currentUser?.uid
+        if (currentUid == null) {
+            println("❌ No user logged in")
+            return
+        }
+
         viewModelScope.launch {
-            val currentUid = auth.currentUser?.uid
-            println("🔍 [DEBUG] Current user UID from ViewModel is: $currentUid") // <--- 新增這一行
+            repository.observeUser(currentUid).collect { user ->
+                _currentUser.value = user
+            }
+        }
 
-            currentUid?.let { ownerId ->
-                // ✅ 取得使用者詳細資料
-                viewModelScope.launch {
-                    repository.observeUser(ownerId).collect { user ->
-                        _currentUser.value = user
+        viewModelScope.launch {
+            allOrganizations
+                .flatMapLatest { organizations ->
+                    val ownedOrgs = organizations.filter { it.ownerId == auth.currentUser?.uid }
+                    if (ownedOrgs.isEmpty()) {
+                        flowOf(emptyList())
+                    } else {
+                        val requestFlows = ownedOrgs.map { org ->
+                            repository.observeOrganizationJoinRequests(org.id)
+                        }
+                        combine(requestFlows) { arrays ->
+                            arrays.flatMap { it.toList() }
+                        }
                     }
                 }
-
-                println("🔍 Querying organizations for ownerId: $ownerId")
-                repository.observeOrganizationsByOwner(ownerId).collect { orgList ->
-                    println("🔍 Received ${orgList.size} organizations")
-                    _organizations.value = orgList
+                .collect { requests ->
+                    _pendingRequests.value = requests.filter { it.status == "pending" }
                 }
-            } ?: run {
-                println("❌ No user logged in")
-            }
         }
     }
 
@@ -64,6 +107,9 @@ class OrganizationListViewModel @Inject constructor(
                 auth.currentUser?.uid?.let { ownerId ->
                     repository.refreshOrganizations(ownerId).onFailure { error ->
                         println("Refresh failed: ${error.localizedMessage}")
+                    }
+                    repository.observeUser(ownerId).firstOrNull()?.let {
+                        _currentUser.value = it
                     }
                 }
             } finally {
@@ -80,7 +126,6 @@ class OrganizationListViewModel @Inject constructor(
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
 
-            // 生成唯一組織代碼
             val orgCode = repository.generateUniqueOrgCode()
 
             val newOrg = Organization(
@@ -96,9 +141,12 @@ class OrganizationListViewModel @Inject constructor(
 
             val existingUser = repository.observeUser(currentUser.uid).firstOrNull()
             val adminUser = if (existingUser != null) {
+                val updatedOrgIds = existingUser.orgIds + newOrg.id
                 existingUser.copy(
                     role = "org_admin",
-                    email = existingUser.email.ifEmpty { currentUser.email ?: "" }
+                    email = existingUser.email.ifEmpty { currentUser.email ?: "" },
+                    orgIds = updatedOrgIds.distinct(),
+                    currentOrgId = newOrg.id
                 )
             } else {
                 User(
@@ -107,7 +155,9 @@ class OrganizationListViewModel @Inject constructor(
                     name = currentUser.displayName ?: "管理員",
                     role = "org_admin",
                     employeeId = "",
-                    joinedAt = Date()
+                    joinedAt = Date(),
+                    orgIds = listOf(newOrg.id),
+                    currentOrgId = newOrg.id
                 )
             }
 
@@ -135,54 +185,3 @@ class OrganizationListViewModel @Inject constructor(
         }
     }
 }
-
-// ==================== 完整使用流程範例 ====================
-
-/**
- * 流程 A: QR Code 加入
- *
- * 1. 管理員進入「邀請管理」→ 建立 QR Code 邀請
- * 2. 新用戶開啟 APP → 點擊「加入組織」→ 選擇「掃描 QR Code」
- * 3. 掃描後自動填入邀請碼並顯示組織資訊
- * 4. 用戶確認並送出申請
- * 5. 管理員在「審核申請」中核准或拒絕
- * 6. 核准後用戶自動加入組織 (及指定群組)
- */
-
-/**
- * 流程 B: 邀請碼加入
- *
- * 1. 管理員進入「邀請管理」→ 建立一般邀請碼
- * 2. 管理員透過任何方式 (Line、Email等) 分享邀請碼
- * 3. 新用戶開啟 APP → 點擊「加入組織」→ 輸入邀請碼
- * 4. 系統顯示組織資訊供確認
- * 5. 其餘流程同上
- */
-
-/**
- * 流程 C: Email 邀請 (未來功能)
- *
- * 1. 管理員進入「邀請管理」→ 建立 Email 邀請
- * 2. 輸入受邀者 Email 列表
- * 3. 系統發送邀請信 (含 Deep Link)
- * 4. 受邀者點擊 Email 中的連結
- * 5. APP 開啟並自動導向加入頁面
- * 6. 其餘流程同上
- */
-
-/**
- * Deep Link 設定範例:
- *
- * AndroidManifest.xml:
- * <intent-filter>
- *     <action android:name="android.intent.action.VIEW" />
- *     <category android:name="android.intent.category.DEFAULT" />
- *     <category android:name="android.intent.category.BROWSABLE" />
- *     <data
- *         android:scheme="scheduler"
- *         android:host="join"
- *         android:pathPrefix="/org" />
- * </intent-filter>
- *
- * Deep Link 格式: scheduler://join/org?code=ABC12345
- */

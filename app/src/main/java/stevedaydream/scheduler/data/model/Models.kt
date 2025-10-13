@@ -18,34 +18,44 @@ data class Features(
 data class Organization(
     @PrimaryKey val id: String = "",
     val orgName: String = "",
+    val displayName: String = "",
+    val orgCode: String = "",
+    val location: String = "",
     val ownerId: String = "",
+    val plan: String = "", // "free", "basic", "premium"
     val createdAt: Date = Date(),
-    val plan: String = "free",
-    @Embedded val features: Features = Features(),
-    // ✨ 新增欄位
-    val orgCode: String = "", // 組織唯一代碼 (8位)
-    val displayName: String = "", // 顯示名稱 (含地區/分院資訊)
-    val location: String = "", // 地點/分院資訊
-    val requireApproval: Boolean = true // 是否需要審核加入
+    val requireApproval: Boolean = true,
+    @get:PropertyName("isActive") val isActive: Boolean = true,
+    @Embedded val features: Features = Features() // ✅ 2. 新增 features 欄位並加上 @Embedded
 ) {
-    fun toFirestoreMap(): Map<String, Any> = mapOf(
-        "orgName" to orgName,
-        "ownerId" to ownerId,
-        "createdAt" to createdAt,
-        "plan" to plan,
-        "features" to features,
-        "orgCode" to orgCode,
-        "displayName" to displayName,
-        "location" to location,
-        "requireApproval" to requireApproval
-    )
+    fun toFirestoreMap(): Map<String, Any?> {
+        return mapOf(
+            "id" to id,
+            "orgName" to orgName,
+            "displayName" to displayName,
+            "orgCode" to orgCode,
+            "location" to location,
+            "ownerId" to ownerId,
+            "plan" to plan,
+            "createdAt" to createdAt,
+            "requireApproval" to requireApproval,
+            "isActive" to isActive,
+            // ✅ 3. 更新 toFirestoreMap 以包含 features
+            "features" to mapOf(
+                "advanced_rules" to features.advancedRules,
+                "excel_export" to features.excelExport,
+                "api_access" to features.apiAccess
+            )
+        )
+    }
 }
 
 // ==================== 使用者 ====================
 @Entity(tableName = "users")
 data class User(
     @PrimaryKey val id: String = "",
-    val orgId: String = "",
+    val orgIds: List<String> = emptyList(),      // 替換 orgId
+    val currentOrgId: String = "",               // 新增 currentOrgId
     val email: String = "",
     val name: String = "",
     val role: String = "member",
@@ -53,6 +63,8 @@ data class User(
     val joinedAt: Date = Date()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "orgIds" to orgIds,                      // 更新 toFirestoreMap
+        "currentOrgId" to currentOrgId,          // 更新 toFirestoreMap
         "email" to email,
         "name" to name,
         "role" to role,

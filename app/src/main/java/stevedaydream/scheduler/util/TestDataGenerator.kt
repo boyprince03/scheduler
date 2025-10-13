@@ -48,11 +48,11 @@ object TestDataGenerator {
         return names.take(count).mapIndexed { index, name ->
             User(
                 id = "user-${index + 1}",
-                orgId = orgId,
+                orgIds = listOf(orgId), // ✅ 使用新的 orgIds 欄位
+                currentOrgId = orgId,   // ✅ 同時設定 currentOrgId
                 email = "${name.replace("", "")}@test.com",
                 name = name,
                 role = if (index == 0) "org_admin" else "member",
-                // ⬅️ 修正 #5: 將 Long 包裝成 Date 物件
                 joinedAt = Date(System.currentTimeMillis() - (index * 86400000L))
             )
         }
@@ -283,7 +283,8 @@ object TestDataGenerator {
             val testMemberId = "test-member-${UUID.randomUUID().toString().take(8)}"
             val testMember = User(
                 id = testMemberId,
-                orgId = org.id,
+                orgIds = listOf(org.id), // ✅ 使用新的 orgIds 欄位
+                currentOrgId = org.id,   // ✅ 同時設定 currentOrgId
                 email = testMemberEmail,
                 name = "測試成員",
                 role = "member",

@@ -1,3 +1,4 @@
+// 修改開始
 package stevedaydream.scheduler.presentation.invite
 
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState // ✅ 1. 匯入 rememberScrollState
+import androidx.compose.foundation.verticalScroll // ✅ 2. 匯入 verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
@@ -62,6 +65,7 @@ fun JoinOrganizationScreen(
     val context = LocalContext.current
     var inviteCode by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState() // ✅ 3. 建立 scrollState
 
     LaunchedEffect(uiState.joinResult) {
         uiState.joinResult?.onSuccess {
@@ -76,10 +80,12 @@ fun JoinOrganizationScreen(
         navController.currentBackStackEntry
             ?.savedStateHandle
             ?.getStateFlow<String?>("scanned_code", null)
-            ?.collect { code ->
-                if (code != null) {
-                    inviteCode = code
-                    viewModel.searchByInviteCode(code)
+            ?.collect { scannedContent ->
+                if (scannedContent != null) {
+                    val uri = android.net.Uri.parse(scannedContent)
+                    val codeFromQR = uri.getQueryParameter("code") ?: scannedContent
+                    inviteCode = codeFromQR
+                    viewModel.searchByInviteCode(codeFromQR)
                     navController.currentBackStackEntry
                         ?.savedStateHandle
                         ?.remove<String>("scanned_code")
@@ -103,9 +109,12 @@ fun JoinOrganizationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(horizontal = 24.dp) // ✅ 4. 只保留水平 padding
+                .verticalScroll(scrollState), // ✅ 5. 讓 Column 可以垂直滾動
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Spacer(Modifier.height(8.dp)) // ✅ 6. 在頂部增加一點間距
+
             Text(
                 "加入方式",
                 style = MaterialTheme.typography.titleLarge,
@@ -273,7 +282,7 @@ fun JoinOrganizationScreen(
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            //Spacer(Modifier.weight(1f)) // ✅ 7. 移除這個 Spacer
 
             // 顯示待審核的申請
             if (uiState.pendingRequests.isNotEmpty()) {
@@ -286,6 +295,8 @@ fun JoinOrganizationScreen(
                     PendingRequestCard(request)
                 }
             }
+
+            Spacer(Modifier.height(16.dp)) // ✅ 8. 在底部也增加一點間距
         }
     }
 }
@@ -343,3 +354,4 @@ private fun PendingRequestCard(request: OrganizationJoinRequest) {
         }
     }
 }
+// 修改結束

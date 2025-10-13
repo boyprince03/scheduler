@@ -1,3 +1,5 @@
+// scheduler/presentation/user/UserProfileViewModel.kt
+
 package stevedaydream.scheduler.presentation.user
 
 import androidx.lifecycle.ViewModel
@@ -38,6 +40,7 @@ class UserProfileViewModel @Inject constructor(
         loadInitialData()
     }
 
+    // 修改開始
     private fun loadInitialData() {
         val userId = auth.currentUser?.uid
         if (userId == null) {
@@ -50,39 +53,50 @@ class UserProfileViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                repository.observeUser(userId).collectLatest { user ->
-                    println("📥 [UserProfile] 收到用戶資料: name=${user?.name}, email=${user?.email}, orgId=${user?.orgId}")
+                // 持續監聽 User 物件的變化
+                repository.observeUser(userId)
+                    // 使用 distinctUntilChanged 避免不必要的重複觸發
+                    // 只有當 user 物件的內容真的改變時，下游才會收到通知
+                    .distinctUntilChanged()
+                    .collect { user ->
+                        _uiState.update {
+                            it.copy(
+                                currentUser = user,
+                                // 如果不是在編輯模式，就同步更新輸入框
+                                nameInput = if (it.isEditing) it.nameInput else user?.name ?: "",
+                                employeeIdInput = if (it.isEditing) it.employeeIdInput else user?.employeeId ?: ""
+                            )
+                        }
 
-                    // ✅ 立即更新用戶資料和輸入框
-                    _uiState.update {
-                        it.copy(
-                            currentUser = user,
-                            nameInput = user?.name ?: "",
-                            employeeIdInput = user?.employeeId ?: ""
-                        )
+                        // 當 user 物件存在且 currentOrgId 不為空時，載入組織與群組資訊
+                        // distinctUntilChanged 會確保即使 user 物件的其他欄位變動，
+                        // 只要 currentOrgId 沒變，這段邏輯也不會一直重複執行。
+                        if (user != null && user.currentOrgId.isNotEmpty()) {
+                            loadOrganizationAndGroups(user)
+                        } else {
+                            // 如果使用者沒有組織，確保清除舊資料並停止載入動畫
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    organization = null,
+                                    currentGroup = null,
+                                    allGroups = emptyList()
+                                )
+                            }
+                        }
                     }
-
-                    if (user != null && user.orgId.isNotEmpty()) {
-                        println("🏢 [UserProfile] 用戶有組織，開始載入組織資料")
-                        loadOrganizationAndGroups(user)
-                    } else {
-                        println("⚠️ [UserProfile] 用戶沒有組織，結束載入")
-                        _uiState.update { it.copy(isLoading = false) }
-                    }
-                }
             } catch (e: Exception) {
-                println("❌ [UserProfile] 載入失敗: ${e.message}")
                 _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
+    // 修改結束
 
     private fun loadOrganizationAndGroups(user: User) {
-        // 載入組織
+        // 使用 currentOrgId 來載入組織
         viewModelScope.launch {
             try {
-                repository.observeOrganization(user.orgId).collect { org ->
-                    println("🏢 [UserProfile] 收到組織資料: ${org?.orgName}")
+                repository.observeOrganization(user.currentOrgId).collect { org ->
                     _uiState.update { it.copy(organization = org) }
                 }
             } catch (e: Exception) {
@@ -90,24 +104,20 @@ class UserProfileViewModel @Inject constructor(
             }
         }
 
-        // 載入組別
+        // 使用 currentOrgId 來載入組別
         viewModelScope.launch {
             try {
-                repository.observeGroups(user.orgId).collect { groups ->
-                    println("👥 [UserProfile] 收到 ${groups.size} 個組別")
+                repository.observeGroups(user.currentOrgId).collect { groups ->
                     val current = groups.find { it.memberIds.contains(user.id) }
-                    println("✅ [UserProfile] 當前組別: ${current?.groupName}")
-
                     _uiState.update {
                         it.copy(
                             allGroups = groups,
                             currentGroup = current,
-                            isLoading = false // ✅ 確保設定為 false
+                            isLoading = false
                         )
                     }
                 }
             } catch (e: Exception) {
-                println("❌ [UserProfile] 載入組別失敗: ${e.message}")
                 _uiState.update { it.copy(isLoading = false) }
             }
         }
@@ -157,6 +167,7 @@ class UserProfileViewModel @Inject constructor(
                     it.copy(
                         isSaving = false,
                         isEditing = false,
+                        // 直接更新 currentUser，避免等待 Firestore 回饋的延遲
                         currentUser = it.currentUser?.copy(
                             name = _uiState.value.nameInput.trim(),
                             employeeId = _uiState.value.employeeIdInput.trim()
@@ -183,12 +194,15 @@ class UserProfileViewModel @Inject constructor(
 
     fun sendGroupJoinRequest(targetGroup: Group) {
         val currentUser = _uiState.value.currentUser ?: return
+        // ✅ 確保 currentOrgId 存在
+        if (currentUser.currentOrgId.isEmpty()) return
+
         println("📨 [UserProfile] 發送組別加入申請: ${targetGroup.groupName}")
 
         viewModelScope.launch {
             val request = GroupJoinRequest(
                 id = UUID.randomUUID().toString(),
-                orgId = currentUser.orgId,
+                orgId = currentUser.currentOrgId, // ✅ 使用 currentOrgId
                 userId = currentUser.id,
                 userName = currentUser.name,
                 targetGroupId = targetGroup.id,
@@ -197,7 +211,7 @@ class UserProfileViewModel @Inject constructor(
                 requestedAt = Date()
             )
 
-            val result = repository.createGroupJoinRequest(currentUser.orgId, request)
+            val result = repository.createGroupJoinRequest(currentUser.currentOrgId, request) // ✅ 使用 currentOrgId
             _uiState.update { it.copy(requestResult = result.map { }) }
         }
     }

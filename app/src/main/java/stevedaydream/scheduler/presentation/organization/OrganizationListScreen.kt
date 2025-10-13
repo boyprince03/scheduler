@@ -1,3 +1,4 @@
+// scheduler/presentation/organization/OrganizationListScreen.kt
 package stevedaydream.scheduler.presentation.organization
 
 import androidx.compose.foundation.clickable
@@ -11,7 +12,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AssignmentInd
 import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Logout // ✅ 引入圖示
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -20,12 +22,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavHostController // ✅ 引入 NavController
-import androidx.navigation.compose.rememberNavController // ✅ 引入 rememberNavController
+import androidx.navigation.NavHostController
 import stevedaydream.scheduler.data.model.Organization
-import stevedaydream.scheduler.presentation.navigation.Screen // ✅ 引入 Screen
+import stevedaydream.scheduler.presentation.navigation.Screen
+import stevedaydream.scheduler.util.showToast
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
@@ -35,14 +41,14 @@ fun OrganizationListScreen(
     onOrganizationClick: (String) -> Unit,
     onAdminClick: () -> Unit
 ) {
-    val organizations by viewModel.organizations.collectAsState()
+    val allOrganizations by viewModel.allOrganizations.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val pendingRequests by viewModel.pendingRequests.collectAsState()
+
     var showCreateDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadOrganizations()
-    }
     val pullRefreshState = rememberPullRefreshState(isRefreshing, { viewModel.refresh() })
 
     LaunchedEffect(Unit) {
@@ -78,10 +84,6 @@ fun OrganizationListScreen(
         )
     }
 
-    val currentUser by viewModel.currentUser.collectAsState()
-    // 建立一個本地的、不可變的變數來進行判斷和使用
-    val user = currentUser
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -93,16 +95,28 @@ fun OrganizationListScreen(
                         Icon(Icons.Default.PersonAdd, contentDescription = "加入組織")
                     }
 
-                    // 使用本地變數 `user` 進行判斷
-                    if (user?.role == "org_admin" && user.orgId.isNotEmpty()) {
-                        IconButton(onClick = {
-                            // 在 lambda 中也使用 `user`
-                            navController.navigate(Screen.ReviewRequests.createRoute(user.orgId))
-                        }) {
-                            Icon(Icons.Default.AssignmentInd, contentDescription = "審核申請")
+                    val ownedOrgs = allOrganizations.filter { it.ownerId == currentUser?.id }
+                    if (ownedOrgs.isNotEmpty() && (currentUser?.role == "org_admin" || currentUser?.role == "superuser")) {
+                        BadgedBox(
+                            badge = {
+                                if (pendingRequests.isNotEmpty()) {
+                                    Badge(
+                                        Modifier.offset(x = (-16).dp, y = 16.dp)
+                                    ) {
+                                        Text("${pendingRequests.size}")
+                                    }
+                                }
+                            }
+                        ) {
+                            IconButton(onClick = {
+                                navController.navigate(Screen.ReviewRequests.createRoute(ownedOrgs.first().id))
+                            }) {
+                                Icon(Icons.Default.AssignmentInd, contentDescription = "審核申請")
+                            }
                         }
                     }
-                    if (user?.role == "superuser") {
+
+                    if (currentUser?.role == "superuser") {
                         IconButton(onClick = onAdminClick) {
                             Icon(
                                 imageVector = Icons.Default.AdminPanelSettings,
@@ -139,15 +153,13 @@ fun OrganizationListScreen(
                 .padding(padding)
                 .pullRefresh(pullRefreshState)
         ) {
-            // ✅ 我們不再使用 if/else 來切換元件
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = if (organizations.isEmpty()) Arrangement.Center else Arrangement.spacedBy(12.dp),
-                horizontalAlignment = if (organizations.isEmpty()) Alignment.CenterHorizontally else Alignment.Start
+                verticalArrangement = if (allOrganizations.isEmpty()) Arrangement.Center else Arrangement.spacedBy(12.dp),
+                horizontalAlignment = if (allOrganizations.isEmpty()) Alignment.CenterHorizontally else Alignment.Start
             ) {
-                // 如果列表是空的，就在 LazyColumn 內部顯示一個 item 作為空狀態
-                if (organizations.isEmpty() && !isRefreshing) {
+                if (allOrganizations.isEmpty() && !isRefreshing) {
                     item {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -173,8 +185,7 @@ fun OrganizationListScreen(
                     }
                 }
 
-                // 正常顯示組織列表
-                items(organizations) { org ->
+                items(allOrganizations) { org ->
                     OrganizationCard(
                         organization = org,
                         onClick = { onOrganizationClick(org.id) }
@@ -206,6 +217,9 @@ fun OrganizationCard(
     organization: Organization,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,7 +238,10 @@ fun OrganizationCard(
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = organization.orgName,
                     style = MaterialTheme.typography.titleMedium
@@ -234,6 +251,30 @@ fun OrganizationCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (organization.orgCode.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(organization.orgCode))
+                                context.showToast("組織代碼已複製")
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "組織代碼: ${organization.orgCode}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "複製組織代碼",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }

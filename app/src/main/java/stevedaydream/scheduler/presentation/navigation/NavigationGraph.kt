@@ -1,3 +1,4 @@
+// scheduler/presentation/navigation/NavigationGraph.kt
 package stevedaydream.scheduler.presentation.navigation
 
 import androidx.compose.runtime.Composable
@@ -177,7 +178,12 @@ fun NavigationGraph(
                 onGroupClick = { groupId ->
                     navController.navigate(Screen.Schedule.createRoute(orgId, groupId))
                 },
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                // vvvvvvvvvvvv 更新的導航事件 vvvvvvvvvvvv
+                onNavigateToInviteManagement = { org ->
+                    navController.navigate(Screen.InviteManagement.createRoute(org))
+                }
+                // ^^^^^^^^^^^^ 更新的導航事件 ^^^^^^^^^^^^
             )
         }
 
@@ -186,7 +192,6 @@ fun NavigationGraph(
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
             ScheduleScreen(
-                // ✅ 移除 orgId, groupId 的傳遞
                 onBackClick = { navController.popBackStack() },
                 onNavigateToManualSchedule = { org, group, month ->
                     navController.navigate(Screen.ManualSchedule.createRoute(org, group, month))
