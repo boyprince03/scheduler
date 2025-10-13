@@ -26,18 +26,26 @@ import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.presentation.common.LoadingIndicator
 import stevedaydream.scheduler.util.DateUtils
 import stevedaydream.scheduler.util.toComposeColor
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.text.font.FontWeight
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) // ✅ 新增 ExperimentalLayoutApi
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ScheduleDetailScreen(
     viewModel: ScheduleDetailViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    onEditClick: (month: String) -> Unit
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
-    val schedule by viewModel.schedule.collectAsState()
-    val assignments by viewModel.assignments.collectAsState()
-    val users by viewModel.users.collectAsState()
-    val shiftTypes by viewModel.shiftTypes.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val schedule = uiState.schedule
 
     Scaffold(
         topBar = {
@@ -49,6 +57,13 @@ fun ScheduleDetailScreen(
                     }
                 },
                 actions = {
+                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                    if (schedule != null) {
+                        IconButton(onClick = { onEditClick(schedule.month) }) {
+                            Icon(Icons.Default.Edit, contentDescription = "編輯班表")
+                        }
+                    }
+                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     IconButton(onClick = { /* TODO: 實作分享功能 */ }) {
                         Icon(Icons.Default.Share, contentDescription = "分享")
                     }
@@ -56,33 +71,95 @@ fun ScheduleDetailScreen(
             )
         }
     ) { padding ->
-        if (isLoading) {
+        if (uiState.isLoading) {
             LoadingIndicator(modifier = Modifier.padding(padding))
         } else if (schedule != null) {
-            Column(
+            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(padding),
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                ShiftLegend(
-                    shiftTypes = shiftTypes,
-                    modifier = Modifier.padding(16.dp)
-                )
-                Divider()
+                item {
+                    ShiftLegend(
+                        shiftTypes = uiState.shiftTypes,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+                item { Divider() }
 
-                ScheduleDetailTable(
-                    month = schedule!!.month,
-                    users = users,
-                    shiftTypes = shiftTypes,
-                    assignments = assignments
-                )
+                item {
+                    ScheduleDetailTable(
+                        month = schedule.month,
+                        users = uiState.users,
+                        shiftTypes = uiState.shiftTypes,
+                        assignments = uiState.assignments
+                    )
+                }
+
+                // 新增：排班結果分析區塊
+                if (schedule.generationMethod == "smart" && schedule.violatedRules.isNotEmpty()) {
+                    item {
+                        AnalysisCard(
+                            violatedRules = schedule.violatedRules,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
             }
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
         }
     }
 }
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+@Composable
+fun AnalysisCard(
+    violatedRules: List<String>,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "排班結果分析",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "本次智慧排班違反了以下 ${violatedRules.size} 條規則：",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(8.dp))
+            violatedRules.forEach { violation ->
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = violation,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+    }
+}
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
-@OptIn(ExperimentalLayoutApi::class) // ✅ 標記為實驗性 API
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShiftLegend(
     shiftTypes: List<ShiftType>,
@@ -94,9 +171,7 @@ fun ShiftLegend(
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        // 🔽🔽🔽 使用官方內建的 FlowRow 🔽🔽🔽
         FlowRow(
-            // 使用新的參數來設定間距
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -117,7 +192,6 @@ fun ShiftLegend(
                 }
             }
         }
-        // 🔼🔼🔼 到此為止 🔼🔼🔼
     }
 }
 

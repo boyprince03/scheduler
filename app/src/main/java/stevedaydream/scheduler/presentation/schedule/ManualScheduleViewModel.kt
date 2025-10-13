@@ -24,6 +24,10 @@ class ManualScheduleViewModel @Inject constructor(
     private val currentOrgId: String = savedStateHandle.get<String>("orgId")!!
     private val currentGroupId: String = savedStateHandle.get<String>("groupId")!!
     val currentMonth: String = savedStateHandle.get<String>("month")!!
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    private val scheduleIdToEdit: String? = savedStateHandle.get<String>("scheduleId")
+    val isEditMode = scheduleIdToEdit != null
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     private val _users = MutableStateFlow<List<User>>(emptyList())
     val users: StateFlow<List<User>> = _users.asStateFlow()
@@ -43,6 +47,11 @@ class ManualScheduleViewModel @Inject constructor(
     private val _saveSuccess = MutableSharedFlow<Unit>()
     val saveSuccess = _saveSuccess.asSharedFlow()
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    private var originalSchedule: Schedule? = null
+    private var originalAssignments: List<Assignment> = emptyList()
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
     init {
         loadData()
     }
@@ -51,6 +60,7 @@ class ManualScheduleViewModel @Inject constructor(
         _isLoading.value = true
 
         viewModelScope.launch {
+            // 這部分邏輯不變
             repository.observeGroup(currentGroupId).collect { group ->
                 group?.let {
                     repository.observeUsers(currentOrgId).collect { allUsers ->
@@ -61,6 +71,7 @@ class ManualScheduleViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            // 這部分邏輯不變
             repository.observeShiftTypes(currentOrgId, currentGroupId).collect { types ->
                 _shiftTypes.value = types
             }
@@ -72,15 +83,29 @@ class ManualScheduleViewModel @Inject constructor(
             }.filter { (userList, shiftList) ->
                 userList.isNotEmpty() && shiftList.isNotEmpty()
             }.take(1)
-                .collect { (userList, _) ->
-                    val dates = DateUtils.getDatesInMonth(currentMonth)
-                    val initialAssignments = userList.associate { user ->
-                        user.id to dates.associate { date ->
-                            date.split("-").last() to ""
+                .collect {
+                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                    if (isEditMode && scheduleIdToEdit != null) {
+                        // 編輯模式：讀取現有資料
+                        originalSchedule = repository.observeSchedule(scheduleIdToEdit).firstOrNull()
+                        originalAssignments = repository.observeAssignments(scheduleIdToEdit).firstOrNull() ?: emptyList()
+
+                        val initialAssignments = originalAssignments.associate { assignment ->
+                            assignment.userId to assignment.dailyShifts
                         }
+                        _assignments.value = initialAssignments
+                    } else {
+                        // 新增模式：建立空白資料
+                        val dates = DateUtils.getDatesInMonth(currentMonth)
+                        val initialAssignments = _users.value.associate { user ->
+                            user.id to dates.associate { date ->
+                                date.split("-").last() to ""
+                            }
+                        }
+                        _assignments.value = initialAssignments
                     }
-                    _assignments.value = initialAssignments
                     _isLoading.value = false
+                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                 }
         }
     }
@@ -97,31 +122,50 @@ class ManualScheduleViewModel @Inject constructor(
         viewModelScope.launch {
             _isSaving.value = true
             try {
-                val schedule = Schedule(
-                    id = UUID.randomUUID().toString(),
-                    orgId = currentOrgId,
-                    groupId = currentGroupId,
-                    month = currentMonth,
-                    status = "published",
-                    generatedAt = Date(),
-                    totalScore = 0,
-                    violatedRules = emptyList()
-                )
-
-                val assignmentsList = _users.value.map { user ->
-                    Assignment(
-                        id = UUID.randomUUID().toString(),
-                        scheduleId = schedule.id,
-                        userId = user.id,
-                        userName = user.name,
-                        dailyShifts = _assignments.value[user.id] ?: emptyMap()
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                if (isEditMode && originalSchedule != null) {
+                    // 更新模式
+                    val updatedSchedule = originalSchedule!!.copy(
+                        status = "published", // 或者保持 draft，視需求而定
+                        generatedAt = Date() // 更新時間
                     )
-                }
+                    val updatedAssignments = originalAssignments.map { oldAssignment ->
+                        _assignments.value[oldAssignment.userId]?.let { newShifts ->
+                            oldAssignment.copy(dailyShifts = newShifts)
+                        } ?: oldAssignment
+                    }
+                    repository.updateScheduleAndAssignments(currentOrgId, updatedSchedule, updatedAssignments)
 
-                repository.createSchedule(currentOrgId, schedule)
-                assignmentsList.forEach { assignment ->
-                    repository.createAssignment(currentOrgId, schedule.id, assignment)
+                } else {
+                    // 新增模式
+                    val schedule = Schedule(
+                        id = UUID.randomUUID().toString(),
+                        orgId = currentOrgId,
+                        groupId = currentGroupId,
+                        month = currentMonth,
+                        status = "published",
+                        generatedAt = Date(),
+                        totalScore = 0,
+                        violatedRules = emptyList(),
+                        generationMethod = "manual" // 標記為手動
+                    )
+
+                    val assignmentsList = _users.value.map { user ->
+                        Assignment(
+                            id = UUID.randomUUID().toString(),
+                            scheduleId = schedule.id,
+                            userId = user.id,
+                            userName = user.name,
+                            dailyShifts = _assignments.value[user.id] ?: emptyMap()
+                        )
+                    }
+
+                    repository.createSchedule(currentOrgId, schedule)
+                    assignmentsList.forEach { assignment ->
+                        repository.createAssignment(currentOrgId, schedule.id, assignment)
+                    }
                 }
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
                 _saveSuccess.emit(Unit)
             } catch (e: Exception) {

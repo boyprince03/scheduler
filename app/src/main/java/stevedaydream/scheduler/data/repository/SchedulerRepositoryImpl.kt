@@ -307,7 +307,6 @@ class SchedulerRepositoryImpl @Inject constructor(
     }
 
     // ==================== 班別類型 ====================
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
         externalScope.launch {
             remoteDataSource.observeShiftTypes(orgId, groupId)
@@ -319,7 +318,6 @@ class SchedulerRepositoryImpl @Inject constructor(
         }
         return database.shiftTypeDao().getShiftTypesByOrgAndGroup(orgId, groupId)
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     override fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
         return remoteDataSource.observeShiftTypeTemplates()
@@ -451,6 +449,12 @@ class SchedulerRepositoryImpl @Inject constructor(
     override fun observeSchedule(scheduleId: String): Flow<Schedule?> {
         return database.scheduleDao().getSchedule(scheduleId)
     }
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    override suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> {
+        return remoteDataSource.updateScheduleAndAssignments(orgId, schedule, assignments)
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     // ==================== 班表分配 ====================
     override suspend fun createAssignment(

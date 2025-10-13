@@ -62,11 +62,8 @@ data class User(
     val role: String = "member",
     val employeeId: String = "",
     val joinedAt: Date = Date(),
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     val employmentStatus: Map<String, String> = emptyMap() // key: orgId, value: status
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "orgIds" to orgIds,
         "currentOrgId" to currentOrgId,
@@ -77,7 +74,6 @@ data class User(
         "joinedAt" to joinedAt,
         "employmentStatus" to employmentStatus
     )
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 // ==================== 群組 ====================
@@ -114,9 +110,7 @@ data class GroupJoinRequest(
     val userName: String = "",
     val targetGroupId: String = "",
     val targetGroupName: String = "",
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     val status: String = "pending", // pending, approved, rejected, canceled
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     val requestedAt: Date = Date()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
@@ -275,16 +269,22 @@ data class Schedule(
     val status: String = "draft",
     val generatedAt: Date = Date(),
     val totalScore: Int = 0,
-    val violatedRules: List<String> = emptyList()
+    val violatedRules: List<String> = emptyList(),
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    val generationMethod: String = "smart" // "smart" 或 "manual"
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "groupId" to groupId,
         "month" to month,
         "status" to status,
         "generatedAt" to generatedAt,
         "totalScore" to totalScore,
-        "violatedRules" to violatedRules
+        "violatedRules" to violatedRules,
+        "generationMethod" to generationMethod
     )
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 // ==================== 班表分配 ====================

@@ -10,10 +10,8 @@ interface SchedulerRepository {
     fun observeOrganization(orgId: String): Flow<Organization?>
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
     suspend fun refreshOrganizations(ownerId: String): Result<Unit>
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeAllOrganizations(): Flow<List<Organization>>
     suspend fun deleteOrganization(orgId: String): Result<Unit>
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit>
     suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit>
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit>
@@ -64,10 +62,8 @@ interface SchedulerRepository {
     fun observeGroup(groupId: String): Flow<Group?>
     // ==================== 組別加入申請 ====================
     suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String>
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>>
     suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit>
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     suspend fun updateUserGroup(orgId: String, userId: String, newGroupId: String, oldGroupId: String?): Result<Unit>
 
 
@@ -108,6 +104,9 @@ interface SchedulerRepository {
     suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String>
     fun observeSchedules(orgId: String, groupId: String): Flow<List<Schedule>>
     fun observeSchedule(scheduleId: String): Flow<Schedule?>
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit>
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     // ==================== 班表分配 ====================
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String>

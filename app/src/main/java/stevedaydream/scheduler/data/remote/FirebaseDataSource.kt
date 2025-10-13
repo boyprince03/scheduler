@@ -15,9 +15,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import stevedaydream.scheduler.util.TestDataGenerator
 import java.util.Calendar
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 import kotlinx.coroutines.flow.combine
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -688,7 +686,6 @@ class FirebaseDataSource @Inject constructor(
             }
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
         // 查詢一：組織層級的預設班別 (groupId 為 null)
         val orgShiftTypesFlow = firestore.collection("organizations/$orgId/shiftTypes")
@@ -715,7 +712,6 @@ class FirebaseDataSource @Inject constructor(
             orgShifts + groupShifts
         }
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/shiftTypes").document()
@@ -864,6 +860,23 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> = runCatching {
+        val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)
+
+        firestore.runBatch { batch ->
+            // 1. 更新 Schedule 物件
+            batch.set(scheduleRef, schedule.toFirestoreMap())
+
+            // 2. 更新 (覆蓋) 所有相關的 Assignment
+            assignments.forEach { assignment ->
+                val assignmentRef = scheduleRef.collection("assignments").document(assignment.id)
+                batch.set(assignmentRef, assignment.toFirestoreMap())
+            }
+        }.await()
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedules/$scheduleId/assignments").document()

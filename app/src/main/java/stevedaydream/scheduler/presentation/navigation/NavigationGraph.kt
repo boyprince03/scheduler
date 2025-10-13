@@ -30,21 +30,25 @@ sealed class Screen(val route: String) {
     object GroupList : Screen("group_list/{orgId}") {
         fun createRoute(orgId: String) = "group_list/$orgId"
     }
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     object MemberList : Screen("member_list/{orgId}") {
         fun createRoute(orgId: String) = "member_list/$orgId"
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     object Schedule : Screen("schedule/{orgId}/{groupId}") {
         fun createRoute(orgId: String, groupId: String) = "schedule/$orgId/$groupId"
     }
     object Request : Screen("request/{orgId}/{groupId}") {
         fun createRoute(orgId: String, groupId: String) = "request/$orgId/$groupId"
     }
-    object ManualSchedule : Screen("manual_schedule/{orgId}/{groupId}/{month}") {
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    object ManualSchedule : Screen("manual_schedule/{orgId}/{groupId}/{month}?scheduleId={scheduleId}") {
+        // 新增班表
         fun createRoute(orgId: String, groupId: String, month: String) =
             "manual_schedule/$orgId/$groupId/$month"
+        // 編輯現有班表
+        fun createRouteForEdit(orgId: String, groupId: String, month: String, scheduleId: String) =
+            "manual_schedule/$orgId/$groupId/$month?scheduleId=$scheduleId"
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     object ScheduleDetail : Screen("schedule_detail/{orgId}/{groupId}/{scheduleId}") {
         fun createRoute(orgId: String, groupId: String, scheduleId: String) =
             "schedule_detail/$orgId/$groupId/$scheduleId"
@@ -173,15 +177,12 @@ fun NavigationGraph(
                 onNavigateToInviteManagement = { org ->
                     navController.navigate(Screen.InviteManagement.createRoute(org))
                 },
-                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                 onNavigateToMemberList = { org ->
                     navController.navigate(Screen.MemberList.createRoute(org))
                 }
-                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             )
         }
 
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
         composable(Screen.MemberList.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             MemberListScreen(
@@ -189,7 +190,6 @@ fun NavigationGraph(
                 onBackClick = { navController.popBackStack() }
             )
         }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
         composable(Screen.Schedule.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
@@ -229,13 +229,18 @@ fun NavigationGraph(
         }
 
         composable(Screen.ScheduleDetail.route) { backStackEntry ->
+            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
             val scheduleId = backStackEntry.arguments?.getString("scheduleId") ?: return@composable
 
             ScheduleDetailScreen(
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onEditClick = { month ->
+                    navController.navigate(Screen.ManualSchedule.createRouteForEdit(orgId, groupId, month, scheduleId))
+                }
             )
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
         }
 
         composable(Screen.ManualSchedule.route) { backStackEntry ->
