@@ -26,7 +26,7 @@ data class Organization(
     val createdAt: Date = Date(),
     val requireApproval: Boolean = true,
     @get:PropertyName("isActive") val isActive: Boolean = true,
-    @Embedded val features: Features = Features() // ✅ 2. 新增 features 欄位並加上 @Embedded
+    @Embedded val features: Features = Features()
 ) {
     fun toFirestoreMap(): Map<String, Any?> {
         return mapOf(
@@ -40,7 +40,6 @@ data class Organization(
             "createdAt" to createdAt,
             "requireApproval" to requireApproval,
             "isActive" to isActive,
-            // ✅ 3. 更新 toFirestoreMap 以包含 features
             "features" to mapOf(
                 "advanced_rules" to features.advancedRules,
                 "excel_export" to features.excelExport,
@@ -54,23 +53,29 @@ data class Organization(
 @Entity(tableName = "users")
 data class User(
     @PrimaryKey val id: String = "",
-    val orgIds: List<String> = emptyList(),      // 替換 orgId
-    val currentOrgId: String = "",               // 新增 currentOrgId
+    val orgIds: List<String> = emptyList(),
+    val currentOrgId: String = "",
     val email: String = "",
     val name: String = "",
     val role: String = "member",
     val employeeId: String = "",
-    val joinedAt: Date = Date()
+    val joinedAt: Date = Date(),
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    val employmentStatus: Map<String, String> = emptyMap() // key: orgId, value: status
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun toFirestoreMap(): Map<String, Any> = mapOf(
-        "orgIds" to orgIds,                      // 更新 toFirestoreMap
-        "currentOrgId" to currentOrgId,          // 更新 toFirestoreMap
+        "orgIds" to orgIds,
+        "currentOrgId" to currentOrgId,
         "email" to email,
         "name" to name,
         "role" to role,
         "employeeId" to employeeId,
-        "joinedAt" to joinedAt
+        "joinedAt" to joinedAt,
+        "employmentStatus" to employmentStatus
     )
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 // ==================== 群組 ====================
@@ -107,7 +112,9 @@ data class GroupJoinRequest(
     val userName: String = "",
     val targetGroupId: String = "",
     val targetGroupName: String = "",
-    val status: String = "pending", // pending, approved, rejected
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    val status: String = "pending", // pending, approved, rejected, canceled
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     val requestedAt: Date = Date()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(

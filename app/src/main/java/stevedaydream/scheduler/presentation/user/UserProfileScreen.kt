@@ -1,5 +1,6 @@
 package stevedaydream.scheduler.presentation.user
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,9 +16,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.data.model.Group
+import stevedaydream.scheduler.data.model.GroupJoinRequest
+import stevedaydream.scheduler.data.model.Organization
+import stevedaydream.scheduler.presentation.common.ConfirmDialog
 import stevedaydream.scheduler.presentation.common.InfoCard
 import stevedaydream.scheduler.presentation.common.LoadingIndicator
+import stevedaydream.scheduler.presentation.common.StatusChip
 import stevedaydream.scheduler.util.showToast
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,14 +34,9 @@ fun UserProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var showGroupSelectorDialog by remember { mutableStateOf(false) }
+    var orgToLeave by remember { mutableStateOf<Organization?>(null) }
 
-    // ✅ 添加 Debug Log
-    LaunchedEffect(uiState) {
-        println("🎨 [UI] isLoading=${uiState.isLoading}, currentUser=${uiState.currentUser?.name}")
-    }
-
-    LaunchedEffect(uiState.requestResult, uiState.saveResult) {
+    LaunchedEffect(uiState.requestResult) {
         uiState.requestResult?.onSuccess {
             context.showToast("申請已送出，請等候管理員核准")
             viewModel.clearRequestResult()
@@ -42,7 +44,9 @@ fun UserProfileScreen(
             context.showToast("申請失敗: ${it.message}")
             viewModel.clearRequestResult()
         }
+    }
 
+    LaunchedEffect(uiState.saveResult) {
         uiState.saveResult?.onSuccess {
             context.showToast("個人資料更新成功")
             viewModel.clearSaveResult()
@@ -51,6 +55,18 @@ fun UserProfileScreen(
             viewModel.clearSaveResult()
         }
     }
+
+    LaunchedEffect(uiState.leaveOrgResult) {
+        uiState.leaveOrgResult?.onSuccess {
+            context.showToast("已退出組織")
+            viewModel.clearLeaveOrgResult()
+        }?.onFailure {
+            context.showToast("退出失敗: ${it.message}")
+            viewModel.clearLeaveOrgResult()
+        }
+    }
+
+
 
     Scaffold(
         topBar = {
@@ -64,32 +80,54 @@ fun UserProfileScreen(
             )
         }
     ) { padding ->
-        // ✅ 添加狀態顯示
-        Column(modifier = Modifier.padding(padding)) {
-            if (uiState.isLoading) {
-                LoadingIndicator()
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+        if (uiState.isLoading) {
+            LoadingIndicator(modifier = Modifier.padding(padding))
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    UserInfoCard(
+                        user = uiState.currentUser,
+                        uiState = uiState,
+                        onNameChange = viewModel::onNameChange,
+                        onEmployeeIdChange = viewModel::onEmployeeIdChange,
+                        onEnableEdit = viewModel::enableEditMode,
+                        onCancelEdit = viewModel::cancelEditMode,
+                        onSave = viewModel::saveUserProfile
+                    )
+                }
+
+                item {
+                    Text("所屬單位", style = MaterialTheme.typography.titleMedium)
+                }
+
+                if (uiState.organizationsInfo.isEmpty()) {
                     item {
-                        UserInfoCard(
-                            user = uiState.currentUser,
-                            uiState = uiState,
-                            onNameChange = viewModel::onNameChange,
-                            onEmployeeIdChange = viewModel::onEmployeeIdChange,
-                            onEnableEdit = viewModel::enableEditMode,
-                            onCancelEdit = viewModel::cancelEditMode,
-                            onSave = viewModel::saveUserProfile
+                        InfoCard(
+                            title = "尚未加入任何組織",
+                            description = "您可以透過邀請碼加入，或建立一個新的組織",
+                            icon = Icons.Default.Business
                         )
                     }
-                    item {
-                        OrganizationInfoCard(
-                            organizationName = uiState.organization?.orgName,
-                            groupName = uiState.currentGroup?.groupName,
-                            onClick = { showGroupSelectorDialog = true }
+                } else {
+                    items(uiState.organizationsInfo, key = { it.organization.id }) { orgInfo ->
+                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                        OrganizationAndGroupCard(
+                            orgInfo = orgInfo,
+                            currentUser = uiState.currentUser,
+                            pendingRequests = uiState.pendingGroupRequests,
+                            onJoinGroupClick = { group ->
+                                viewModel.sendGroupJoinRequest(orgInfo.organization.id, group)
+                            },
+                            onCancelRequestClick = { request ->
+                                viewModel.cancelGroupJoinRequest(request)
+                            },
+                            onLeaveOrgClick = { orgToLeave = orgInfo.organization }
                         )
                     }
                 }
@@ -97,18 +135,154 @@ fun UserProfileScreen(
         }
     }
 
-    if (showGroupSelectorDialog) {
-        JoinGroupDialog(
-            allGroups = uiState.allGroups,
-            currentGroup = uiState.currentGroup,
-            onDismiss = { showGroupSelectorDialog = false },
-            onSelectGroup = { selectedGroup ->
-                viewModel.sendGroupJoinRequest(selectedGroup)
-                showGroupSelectorDialog = false
-            }
+    orgToLeave?.let { org ->
+        ConfirmDialog(
+            title = "確認退出組織",
+            message = "您確定要退出「${org.orgName}」嗎？此操作將會移除您在此組織的所有資料。",
+            confirmText = "確認退出",
+            onConfirm = {
+                viewModel.leaveOrganization(org.id)
+                orgToLeave = null
+            },
+            onDismiss = { orgToLeave = null }
         )
     }
 }
+
+@Composable
+private fun OrganizationAndGroupCard(
+    orgInfo: UserOrganizationInfo,
+    currentUser: stevedaydream.scheduler.data.model.User?,
+    pendingRequests: List<GroupJoinRequest>, // 新增參數
+    onCancelRequestClick: (GroupJoinRequest) -> Unit, // 新增參數
+    onJoinGroupClick: (Group) -> Unit,
+    onLeaveOrgClick: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            // Organization Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(Icons.Default.Business, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = orgInfo.organization.displayName,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    StatusChip(label = orgInfo.userStatus)
+                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "收合" else "展開"
+                )
+            }
+
+
+            // Expandable Group List
+            AnimatedVisibility(visible = isExpanded) {
+                Column {
+                    Divider()
+                    if (orgInfo.groups.isEmpty()) {
+                        Text(
+                            "此組織尚無任何群組",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    } else {
+                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                        orgInfo.groups.forEach { group ->
+                            val isMember = currentUser?.let { user -> group.memberIds.contains(user.id) } ?: false
+                            val pendingRequest = pendingRequests.find { it.targetGroupId == group.id && it.status == "pending" }
+
+                            GroupListItem(
+                                group = group,
+                                isMember = isMember,
+                                pendingRequest = pendingRequest,
+                                onJoinClick = { onJoinGroupClick(group) },
+                                onCancelClick = {
+                                    pendingRequest?.let { onCancelRequestClick(it) }
+                                }
+                            )
+                        }
+                    }
+                    Divider()
+                    TextButton(
+                        onClick = onLeaveOrgClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp)
+                    ) {
+                        Text("退出組織", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupListItem(
+    group: Group,
+    pendingRequest: GroupJoinRequest?, // 新增參數
+    isMember: Boolean,
+    onJoinClick: () -> Unit,
+    onCancelClick: () -> Unit          // 新增參數
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isMember, onClick = onJoinClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(
+            if (isMember) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (isMember) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(group.groupName, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "${group.memberIds.size} 位成員",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        when {
+            isMember -> {
+                // 已是成員，不顯示按鈕
+            }
+            pendingRequest != null -> {
+                OutlinedButton(
+                    onClick = onCancelClick,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    Text("取消申請")
+                }
+            }
+            else -> {
+                Button(onClick = onJoinClick, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                    Text("申請加入")
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun UserInfoCard(
@@ -120,7 +294,6 @@ private fun UserInfoCard(
     onCancelEdit: () -> Unit,
     onSave: () -> Unit
 ) {
-    // ✅ 新增: 當 user 變化時,更新輸入框
     LaunchedEffect(user) {
         if (user != null && !uiState.isEditing) {
             onNameChange(user.name)
@@ -133,7 +306,6 @@ private fun UserInfoCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ... 其餘代碼保持不變
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -159,7 +331,6 @@ private fun UserInfoCard(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             } else {
-                // -- 姓名 --
                 if (uiState.isEditing) {
                     OutlinedTextField(
                         value = uiState.nameInput,
@@ -174,7 +345,6 @@ private fun UserInfoCard(
 
                 InfoRow(icon = Icons.Default.Email, label = "Email", value = user.email)
 
-                // -- 員工編號 --
                 if (uiState.isEditing) {
                     OutlinedTextField(
                         value = uiState.employeeIdInput,
@@ -213,28 +383,6 @@ private fun UserInfoCard(
 }
 
 @Composable
-private fun OrganizationInfoCard(
-    organizationName: String?,
-    groupName: String?,
-    onClick: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("所屬單位", style = MaterialTheme.typography.titleMedium)
-        InfoCard(
-            title = "公司",
-            description = organizationName ?: "尚未加入或創建組織", // ✅ 修正提示文字
-            icon = Icons.Default.Business
-        )
-        InfoCard(
-            title = "組別",
-            description = groupName ?: "尚未加入組別", // ✅ 修正提示文字
-            icon = Icons.Default.Groups,
-            onClick = if (organizationName != null) onClick else null // ✅ 只有加入組織後才能點擊
-        )
-    }
-}
-
-@Composable
 private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -253,45 +401,3 @@ private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     }
 }
 
-@Composable
-private fun JoinGroupDialog(
-    allGroups: List<Group>,
-    currentGroup: Group?,
-    onDismiss: () -> Unit,
-    onSelectGroup: (Group) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("申請加入或更改組別") },
-        text = {
-            if (allGroups.isEmpty()) {
-                Text("目前沒有可加入的組別。")
-            } else {
-                LazyColumn {
-                    items(allGroups, key = { it.id }) { group ->
-                        val isCurrentUserInGroup = group.id == currentGroup?.id
-                        ListItem(
-                            headlineContent = {
-                                Text(
-                                    text = group.groupName,
-                                    fontWeight = if (isCurrentUserInGroup) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            supportingContent = { Text("${group.memberIds.size} 位成員") },
-                            trailingContent = {
-                                if (isCurrentUserInGroup) {
-                                    Icon(Icons.Default.Check, contentDescription = "目前組別")
-                                }
-                            },
-                            modifier = Modifier.clickable { onSelectGroup(group) }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-        }
-    )
-}

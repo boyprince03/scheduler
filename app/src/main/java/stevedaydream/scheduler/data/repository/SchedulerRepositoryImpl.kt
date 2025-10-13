@@ -53,6 +53,14 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.deactivateInvite(orgId, inviteId)
     }
 
+    override suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> {
+        return remoteDataSource.leaveOrganization(orgId, userId)
+    }
+
+    override suspend fun updateEmploymentStatus(orgId: String, userId: String, status: String): Result<Unit> {
+        return remoteDataSource.updateEmploymentStatus(orgId, userId, status)
+    }
+
     // ==================== 組織 ====================
     override suspend fun createOrganization(org: Organization, user: User): Result<String> {
         // 我們直接呼叫 FirebaseDataSource，讓它處理交易
@@ -187,12 +195,12 @@ class SchedulerRepositoryImpl @Inject constructor(
         }
     }
 
-    // ✅ 新增
+
     override suspend fun checkUserExists(userId: String): Boolean {
         return remoteDataSource.checkUserExists(userId)
     }
 
-    // ✅ 新增
+
     override suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> {
         return remoteDataSource.updateUser(userId, updates)
     }
@@ -232,7 +240,15 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> {
         return remoteDataSource.createGroupJoinRequest(orgId, request)
     }
-    // --- 修改開始 ---
+
+    override suspend fun cancelGroupJoinRequest(orgId: String, requestId: String): Result<Unit> {
+        return remoteDataSource.cancelGroupJoinRequest(orgId, requestId)
+    }
+
+    override fun observeGroupJoinRequestsForUser(userId: String): Flow<List<GroupJoinRequest>> {
+        // 直接從遠端觀察，確保即時性
+        return remoteDataSource.observeGroupJoinRequestsForUser(userId)
+    }
     override suspend fun updateUserGroup(
         orgId: String,
         userId: String,
@@ -241,7 +257,7 @@ class SchedulerRepositoryImpl @Inject constructor(
     ): Result<Unit> {
         return remoteDataSource.updateUserGroup(orgId, userId, newGroupId, oldGroupId)
     }
-    // --- 修改結束 ---
+
     // ==================== 排班者生命週期 ====================
     override suspend fun claimScheduler(
         orgId: String,

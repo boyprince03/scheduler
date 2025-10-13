@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,6 +56,7 @@ import stevedaydream.scheduler.data.model.OrganizationJoinRequest
 import stevedaydream.scheduler.util.DateUtils
 import stevedaydream.scheduler.util.showToast
 import stevedaydream.scheduler.util.toReadableTime
+import androidx.compose.material.icons.filled.Info
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,7 +158,7 @@ fun ReviewJoinRequestsScreen(
                     item {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "已處理 (${processedRequests.size})",
+                            "已處理/取消 (${processedRequests.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -357,30 +360,44 @@ private fun JoinRequestCard(
 
 @Composable
 private fun ProcessedRequestCard(request: OrganizationJoinRequest) {
+    val containerColor = when(request.status) {
+        "approved" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        "rejected" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        "canceled" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val icon = when(request.status) {
+        "approved" -> Icons.Default.CheckCircle
+        "rejected" -> Icons.Default.Cancel
+        "canceled" -> Icons.Default.Info
+        else -> Icons.Default.Help
+    }
+    val tintColor = when(request.status) {
+        "approved" -> MaterialTheme.colorScheme.primary
+        "rejected" -> MaterialTheme.colorScheme.error
+        "canceled" -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val statusText = when(request.status) {
+        "approved" -> "已核准"
+        "rejected" -> "已拒絕"
+        "canceled" -> "申請人已取消"
+        else -> "未知"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (request.status == "approved")
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (request.status == "approved")
-                    Icons.Default.CheckCircle
-                else
-                    Icons.Default.Cancel,
+                imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(32.dp),
-                tint = if (request.status == "approved")
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.error
+                tint = tintColor
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -389,13 +406,13 @@ private fun ProcessedRequestCard(request: OrganizationJoinRequest) {
                     style = MaterialTheme.typography.titleSmall
                 )
                 Text(
-                    if (request.status == "approved") "已核准" else "已拒絕",
+                    statusText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Text(
-                request.processedAt?.time?.toReadableTime() ?: "", // <-- .time?
+                request.processedAt?.time?.toReadableTime() ?: request.requestedAt.time.toReadableTime(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

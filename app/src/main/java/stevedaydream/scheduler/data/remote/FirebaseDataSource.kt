@@ -3,6 +3,7 @@
 package stevedaydream.scheduler.data.remote
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.snapshots
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,50 @@ class FirebaseDataSource @Inject constructor(
         )
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> = runCatching {
+        val userRef = firestore.collection("users").document(userId)
+        val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
+
+        // 1. 在批次寫入前，先讀取所有需要的資料
+        val userSnapshot = userRef.get().await()
+        val user = userSnapshot.toObject(User::class.java)
+        val groupsInOrg = firestore.collection("organizations/$orgId/groups")
+            .whereArrayContains("memberIds", userId)
+            .get()
+            .await()
+
+        // 2. 執行批次寫入
+        firestore.runBatch { batch ->
+            // 從頂層 User 物件中移除 orgId
+            batch.update(userRef, "orgIds", FieldValue.arrayRemove(orgId))
+
+            // 如果 currentOrgId 是要離開的組織，則清空
+            if (user?.currentOrgId == orgId) {
+                batch.update(userRef, "currentOrgId", "")
+            }
+
+            // 從組織底下的 users 子集合中刪除使用者
+            batch.delete(subCollectionUserRef)
+
+            // 從該組織的所有群組中移除使用者
+            groupsInOrg.documents.forEach { doc ->
+                batch.update(doc.reference, "memberIds", FieldValue.arrayRemove(userId))
+            }
+        }.await()
+    }
+
+    suspend fun updateEmploymentStatus(orgId: String, userId: String, status: String): Result<Unit> = runCatching {
+        val userRef = firestore.collection("users").document(userId)
+        val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
+        val statusUpdate = mapOf("employmentStatus.$orgId" to status)
+
+        firestore.runBatch { batch ->
+            batch.update(userRef, statusUpdate)
+            batch.update(subCollectionUserRef, statusUpdate)
+        }.await()
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
     // ==================== 組織 ====================
@@ -262,7 +307,6 @@ class FirebaseDataSource @Inject constructor(
             .await()
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun processJoinRequest(
         orgId: String,
         requestId: String,
@@ -273,8 +317,6 @@ class FirebaseDataSource @Inject constructor(
         val requestRef = firestore.collection("organizationJoinRequests").document(requestId)
 
         firestore.runTransaction { transaction ->
-            // --- 1. 讀取階段 (READ PHASE) ---
-            // 讀取所有需要操作的文件
             val requestSnapshot = transaction.get(requestRef)
             val request = requestSnapshot.toObject(OrganizationJoinRequest::class.java)
                 ?: throw IllegalArgumentException("找不到申請記錄: $requestId")
@@ -288,14 +330,10 @@ class FirebaseDataSource @Inject constructor(
             } else null
             val groupSnapshot = groupRef?.let { transaction.get(it) }
 
-            // --- 2. 驗證階段 (VALIDATION PHASE) ---
-            // 使用已讀取的資料進行驗證
             if (approve && groupRef != null && (groupSnapshot == null || !groupSnapshot.exists())) {
                 throw IllegalArgumentException("指定的群組不存在: $targetGroupId")
             }
 
-            // --- 3. 寫入階段 (WRITE PHASE) ---
-            // 所有讀取都已完成，現在可以安全地進行寫入
             val statusUpdate = mapOf(
                 "status" to if (approve) "approved" else "rejected",
                 "processedBy" to processedBy,
@@ -304,21 +342,17 @@ class FirebaseDataSource @Inject constructor(
             transaction.update(requestRef, statusUpdate)
 
             if (approve) {
-                // 更新使用者資料
                 transaction.update(userRef, "orgIds", com.google.firebase.firestore.FieldValue.arrayUnion(orgId))
                 if (user?.currentOrgId.isNullOrBlank()) {
                     transaction.update(userRef, "currentOrgId", orgId)
                 }
 
-                // 如果有指定群組，將使用者加入群組
                 groupRef?.let {
                     transaction.update(it, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(request.userId))
                 }
             }
-            // 交易成功時會自動提交
         }.await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun getOrganizationByCode(orgCode: String): Result<Organization?> = runCatching {
         val snapshot = firestore.collection("organizations")
@@ -401,8 +435,23 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(requestWithId.toFirestoreMap()).await()
         docRef.id
     }
-    // --- 修改開始 ---
-    // 函式：updateUserGroup
+    suspend fun cancelGroupJoinRequest(orgId: String, requestId: String): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/groupJoinRequests")
+            .document(requestId)
+            .update("status", "canceled")
+            .await()
+    }
+
+    fun observeGroupJoinRequestsForUser(userId: String): Flow<List<GroupJoinRequest>> {
+        return firestore.collectionGroup("groupJoinRequests")
+            .whereEqualTo("userId", userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(GroupJoinRequest::class.java)?.copy(id = it.id)
+                }
+            }
+    }
     suspend fun updateUserGroup(
         orgId: String,
         userId: String,
@@ -412,18 +461,15 @@ class FirebaseDataSource @Inject constructor(
         val groupsCollection = firestore.collection("organizations/$orgId/groups")
 
         firestore.runBatch { batch ->
-            // 從舊群組移除 (如果有的話)
             if (oldGroupId != null && oldGroupId != newGroupId) {
                 val oldGroupRef = groupsCollection.document(oldGroupId)
                 batch.update(oldGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayRemove(userId))
             }
 
-            // 加入新群組
             val newGroupRef = groupsCollection.document(newGroupId)
             batch.update(newGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
         }.await()
     }
-    // --- 修改結束 ---
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String, leaseDuration: Long = 2 * 60 * 60 * 1000): Result<Boolean> = runCatching {
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 
