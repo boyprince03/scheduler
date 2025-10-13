@@ -13,8 +13,6 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import java.util.*
 import javax.inject.Inject
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-
 data class UserOrganizationInfo(
     val organization: Organization,
     val groups: List<Group> = emptyList(),
@@ -22,11 +20,13 @@ data class UserOrganizationInfo(
     val isMember: Boolean = true
 )
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 data class UserProfileUiState(
     val isLoading: Boolean = true,
     val currentUser: User? = null,
     val organizationsInfo: List<UserOrganizationInfo> = emptyList(),
-    val pendingGroupRequests: List<GroupJoinRequest> = emptyList(), // 新增：追蹤待審核的申請
+    val pendingGroupRequests: List<GroupJoinRequest> = emptyList(),
+    val updatingGroupRequests: Set<String> = emptySet(), // 新增：追蹤正在處理的群組 ID
     val requestResult: Result<Unit>? = null,
     val isEditing: Boolean = false,
     val isSaving: Boolean = false,
@@ -35,6 +35,7 @@ data class UserProfileUiState(
     val saveResult: Result<Unit>? = null,
     val leaveOrgResult: Result<Unit>? = null
 )
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 @HiltViewModel
 class UserProfileViewModel @Inject constructor(
@@ -53,7 +54,6 @@ class UserProfileViewModel @Inject constructor(
         val userId = auth.currentUser?.uid ?: return
         _uiState.update { it.copy(isLoading = true) }
 
-        // 監聽使用者資料與其組織/群組資訊
         viewModelScope.launch {
             repository.observeUser(userId)
                 .distinctUntilChanged()
@@ -93,7 +93,6 @@ class UserProfileViewModel @Inject constructor(
                 }
         }
 
-        // 獨立監聽使用者的群組加入申請
         viewModelScope.launch {
             repository.observeGroupJoinRequestsForUser(userId).collect { requests ->
                 _uiState.update { it.copy(pendingGroupRequests = requests) }
@@ -101,13 +100,15 @@ class UserProfileViewModel @Inject constructor(
         }
     }
 
-
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun sendGroupJoinRequest(targetOrgId: String, targetGroup: Group) {
         val currentUser = _uiState.value.currentUser ?: return
 
         viewModelScope.launch {
+            // 1. 設置載入狀態
+            _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests + targetGroup.id) }
+
             val request = GroupJoinRequest(
-                id = UUID.randomUUID().toString(),
                 orgId = targetOrgId,
                 userId = currentUser.id,
                 userName = currentUser.name,
@@ -116,18 +117,37 @@ class UserProfileViewModel @Inject constructor(
                 status = "pending",
                 requestedAt = Date()
             )
-            val result = repository.createGroupJoinRequest(targetOrgId, request)
-            _uiState.update { it.copy(requestResult = result.map { }) }
+
+            try {
+                val result = repository.createGroupJoinRequest(targetOrgId, request)
+                // 2. 處理結果，主要用於顯示 Toast
+                _uiState.update { it.copy(requestResult = result.map { }) }
+            } finally {
+                // 3. 無論成功或失敗，都移除載入狀態
+                _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests - targetGroup.id) }
+            }
         }
     }
 
     fun cancelGroupJoinRequest(request: GroupJoinRequest) {
         viewModelScope.launch {
-            val result = repository.cancelGroupJoinRequest(request.orgId, request.id)
-            // 可以在此處更新 UI 反應，例如顯示 Toast
+            // 1. 設置載入狀態
+            _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests + request.targetGroupId) }
+
+            try {
+                // 2. 執行背景操作
+                repository.cancelGroupJoinRequest(request.orgId, request.id)
+                // 成功後 Firestore listener 會自動更新 UI
+            } catch (e: Exception) {
+                // (可選) 處理錯誤，例如顯示 Toast
+            }
+            finally {
+                // 3. 移除載入狀態
+                _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests - request.targetGroupId) }
+            }
         }
     }
-
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun leaveOrganization(orgId: String) {
         val userId = auth.currentUser?.uid ?: return
@@ -191,4 +211,3 @@ class UserProfileViewModel @Inject constructor(
         _uiState.update { it.copy(requestResult = null) }
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

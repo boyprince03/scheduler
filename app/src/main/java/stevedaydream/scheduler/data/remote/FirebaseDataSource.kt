@@ -443,6 +443,7 @@ class FirebaseDataSource @Inject constructor(
     fun observeGroupJoinRequestsForUser(userId: String): Flow<List<GroupJoinRequest>> {
         return firestore.collectionGroup("groupJoinRequests")
             .whereEqualTo("userId", userId)
+            .orderBy("requestedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull {

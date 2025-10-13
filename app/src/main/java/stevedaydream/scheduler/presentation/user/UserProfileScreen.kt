@@ -117,10 +117,12 @@ fun UserProfileScreen(
                     }
                 } else {
                     items(uiState.organizationsInfo, key = { it.organization.id }) { orgInfo ->
+                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                         OrganizationAndGroupCard(
                             orgInfo = orgInfo,
                             currentUser = uiState.currentUser,
                             pendingRequests = uiState.pendingGroupRequests,
+                            updatingGroupRequests = uiState.updatingGroupRequests, // 傳入新的狀態
                             onJoinGroupClick = { group ->
                                 viewModel.sendGroupJoinRequest(orgInfo.organization.id, group)
                             },
@@ -129,6 +131,7 @@ fun UserProfileScreen(
                             },
                             onLeaveOrgClick = { orgToLeave = orgInfo.organization }
                         )
+                        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     }
                 }
             }
@@ -149,15 +152,18 @@ fun UserProfileScreen(
     }
 }
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 @Composable
 private fun OrganizationAndGroupCard(
     orgInfo: UserOrganizationInfo,
     currentUser: stevedaydream.scheduler.data.model.User?,
-    pendingRequests: List<GroupJoinRequest>, // 新增參數
-    onCancelRequestClick: (GroupJoinRequest) -> Unit, // 新增參數
+    pendingRequests: List<GroupJoinRequest>,
+    updatingGroupRequests: Set<String>, // 新增參數
+    onCancelRequestClick: (GroupJoinRequest) -> Unit,
     onJoinGroupClick: (Group) -> Unit,
     onLeaveOrgClick: () -> Unit
 ) {
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     var isExpanded by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -200,13 +206,16 @@ private fun OrganizationAndGroupCard(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     } else {
+                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                         orgInfo.groups.forEach { group ->
                             val isMember = currentUser?.let { user -> group.memberIds.contains(user.id) } ?: false
                             val pendingRequest = pendingRequests.find { it.targetGroupId == group.id && it.status == "pending" }
+                            val isUpdating = updatingGroupRequests.contains(group.id) // 檢查是否正在更新
 
                             GroupListItem(
                                 group = group,
                                 isMember = isMember,
+                                isUpdating = isUpdating, // 傳入更新狀態
                                 pendingRequest = pendingRequest,
                                 onJoinClick = { onJoinGroupClick(group) },
                                 onCancelClick = {
@@ -214,6 +223,7 @@ private fun OrganizationAndGroupCard(
                                 }
                             )
                         }
+                        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     }
                     Divider()
                     TextButton(
@@ -234,15 +244,15 @@ private fun OrganizationAndGroupCard(
 @Composable
 private fun GroupListItem(
     group: Group,
-    pendingRequest: GroupJoinRequest?,
     isMember: Boolean,
+    isUpdating: Boolean, // 新增參數
+    pendingRequest: GroupJoinRequest?,
     onJoinClick: () -> Unit,
     onCancelClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 移除整行點擊事件
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -261,27 +271,29 @@ private fun GroupListItem(
             )
         }
 
-        when {
-            isMember -> {
-                // 如果已是成員，不顯示任何按鈕
-            }
-            pendingRequest != null -> {
-                // 如果有待審核的申請，顯示「取消申請」按鈕
-                OutlinedButton(
-                    onClick = onCancelClick,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    contentPadding = PaddingValues(horizontal = 16.dp)
-                ) {
-                    Text("取消申請")
-                }
-            }
-            else -> {
-                // 否則，顯示「申請加入」按鈕
-                Button(
-                    onClick = onJoinClick,
-                    contentPadding = PaddingValues(horizontal = 16.dp)
-                ) {
-                    Text("申請加入")
+        // Action Button Area
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.sizeIn(minWidth = 120.dp, minHeight = 40.dp)) {
+            if (isUpdating) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else {
+                when {
+                    isMember -> {
+                        // 已是成員，不顯示按鈕
+                    }
+                    pendingRequest != null -> {
+                        OutlinedButton(
+                            onClick = onCancelClick,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            contentPadding = PaddingValues(horizontal = 16.dp)
+                        ) {
+                            Text("取消申請")
+                        }
+                    }
+                    else -> {
+                        Button(onClick = onJoinClick, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                            Text("申請加入")
+                        }
+                    }
                 }
             }
         }

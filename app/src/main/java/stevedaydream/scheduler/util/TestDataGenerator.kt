@@ -5,8 +5,8 @@ import java.util.*
 import kotlin.math.absoluteValue
 
 /**
- * 測試資料產生器
- * 用於開發階段快速產生測試資料
+ * 測試資料產生器 (已更新)
+ * 用於開發階段快速產生符合最新資料模型的測試資料
  */
 object TestDataGenerator {
 
@@ -15,16 +15,21 @@ object TestDataGenerator {
      */
     fun generateOrganization(
         id: String = UUID.randomUUID().toString(),
-        name: String = "測試公司",
-        ownerId: String = "test-owner-001"
+        name: String = "測試組織",
+        ownerId: String,
+        orgCode: String
     ): Organization {
         return Organization(
             id = id,
             orgName = name,
+            displayName = "$name (總部)",
+            orgCode = orgCode,
+            location = "測試地區",
             ownerId = ownerId,
-            createdAt = Date(), // ⬅️ 修正 #4
             plan = "free",
-            // ✅ 修正：使用新的 Features 巢狀類別來傳入參數
+            createdAt = Date(),
+            requireApproval = true,
+            isActive = true,
             features = Features(
                 advancedRules = false,
                 excelExport = false,
@@ -46,14 +51,17 @@ object TestDataGenerator {
         )
 
         return names.take(count).mapIndexed { index, name ->
+            val userId = "test-user-${UUID.randomUUID().toString().take(8)}"
             User(
-                id = "user-${index + 1}",
-                orgIds = listOf(orgId), // ✅ 使用新的 orgIds 欄位
-                currentOrgId = orgId,   // ✅ 同時設定 currentOrgId
-                email = "${name.replace("", "")}@test.com",
+                id = userId,
+                orgIds = listOf(orgId),
+                currentOrgId = orgId,
+                email = "testuser${index + 1}@example.com",
                 name = name,
                 role = if (index == 0) "org_admin" else "member",
-                joinedAt = Date(System.currentTimeMillis() - (index * 86400000L))
+                employeeId = "E${1000 + index}",
+                joinedAt = Date(System.currentTimeMillis() - (index * 86400000L)),
+                employmentStatus = mapOf(orgId to "active") // 新增 employmentStatus
             )
         }
     }
@@ -67,15 +75,15 @@ object TestDataGenerator {
     ): List<Group> {
         return listOf(
             Group(
-                id = "group-001",
+                id = "group-${UUID.randomUUID().toString().take(8)}",
                 orgId = orgId,
-                groupName = "早班組",
+                groupName = "日班團隊",
                 memberIds = userIds.take(5)
             ),
             Group(
-                id = "group-002",
+                id = "group-${UUID.randomUUID().toString().take(8)}",
                 orgId = orgId,
-                groupName = "晚班組",
+                groupName = "夜班團隊",
                 memberIds = userIds.drop(5).take(5)
             )
         )
@@ -87,46 +95,26 @@ object TestDataGenerator {
     fun generateShiftTypes(orgId: String): List<ShiftType> {
         return listOf(
             ShiftType(
-                id = "shift-day",
-                orgId = orgId,
-                name = "早班",
-                shortCode = "D",
-                startTime = "09:00",
-                endTime = "17:00",
-                color = "#4A90E2"
+                id = "shift-day", orgId = orgId, name = "早班", shortCode = "D",
+                startTime = "09:00", endTime = "17:00", color = "#4A90E2"
             ),
             ShiftType(
-                id = "shift-evening",
-                orgId = orgId,
-                name = "晚班",
-                shortCode = "E",
-                startTime = "17:00",
-                endTime = "01:00",
-                color = "#F5A623"
+                id = "shift-evening", orgId = orgId, name = "晚班", shortCode = "E",
+                startTime = "17:00", endTime = "01:00", color = "#F5A623"
             ),
             ShiftType(
-                id = "shift-night",
-                orgId = orgId,
-                name = "大夜班",
-                shortCode = "N",
-                startTime = "01:00",
-                endTime = "09:00",
-                color = "#7B68EE"
+                id = "shift-night", orgId = orgId, name = "大夜班", shortCode = "N",
+                startTime = "01:00", endTime = "09:00", color = "#7B68EE"
             ),
             ShiftType(
-                id = "shift-off",
-                orgId = orgId,
-                name = "休假",
-                shortCode = "OFF",
-                startTime = "00:00",
-                endTime = "00:00",
-                color = "#9E9E9E"
+                id = "shift-off", orgId = orgId, name = "休假", shortCode = "OFF",
+                startTime = "00:00", endTime = "00:00", color = "#9E9E9E"
             )
         )
     }
 
     /**
-     * 產生測試請求
+     * 產生測試請求 (請假/偏好)
      */
     fun generateRequests(
         orgId: String,
@@ -134,29 +122,19 @@ object TestDataGenerator {
         month: String = DateUtils.getCurrentMonthString()
     ): List<Request> {
         val dates = DateUtils.getDatesInMonth(month)
-
-        return users.take(3).flatMapIndexed { userIndex, user ->
-            dates.take(5).mapIndexed { dateIndex, date ->
+        return users.take(2).flatMapIndexed { userIndex, user ->
+            listOf(
                 Request(
-                    id = "request-${userIndex}-${dateIndex}",
-                    orgId = orgId,
-                    userId = user.id,
-                    userName = user.name,
-                    date = date,
-                    type = if (dateIndex % 2 == 0) "leave" else "shift_preference",
-                    details = mapOf(
-                        "reason" to "個人事務",
-                        "shiftType" to if (dateIndex % 2 == 0) "OFF" else "D"
-                    ),
-                    status = when (dateIndex % 3) {
-                        0 -> "pending"
-                        1 -> "approved"
-                        else -> "rejected"
-                    },
-                    // ⬅️ 修正 #6: 將 Long 包裝成 Date 物件
-                    createdAt = Date(System.currentTimeMillis() - (dateIndex * 3600000L))
+                    id = "request-${UUID.randomUUID().toString().take(8)}",
+                    orgId = orgId, userId = user.id, userName = user.name, date = dates[userIndex + 5],
+                    type = "leave", details = mapOf("reason" to "家庭事務"), status = "approved", createdAt = Date()
+                ),
+                Request(
+                    id = "request-${UUID.randomUUID().toString().take(8)}",
+                    orgId = orgId, userId = user.id, userName = user.name, date = dates[userIndex + 10],
+                    type = "shift_preference", details = mapOf("shiftId" to "shift-day"), status = "pending", createdAt = Date()
                 )
-            }
+            )
         }
     }
 
@@ -166,40 +144,14 @@ object TestDataGenerator {
     fun generateSchedulingRules(orgId: String): List<SchedulingRule> {
         return listOf(
             SchedulingRule(
-                id = "rule-001",
-                orgId = orgId,
-                ruleName = "輪班間隔需大於11小時",
-                ruleType = "hard",
-                penaltyScore = -1000,
-                isEnabled = true,
-                isPremiumFeature = false
+                id = "rule-consecutive-work", orgId = orgId, ruleName = "連續上班不超過N天",
+                description = "避免員工因連續工作過多天而過勞。", ruleType = "soft", penaltyScore = -50,
+                isEnabled = true, parameters = mapOf("maxDays" to "6")
             ),
             SchedulingRule(
-                id = "rule-002",
-                orgId = orgId,
-                ruleName = "每週至少休息1天",
-                ruleType = "hard",
-                penaltyScore = -1000,
-                isEnabled = true,
-                isPremiumFeature = false
-            ),
-            SchedulingRule(
-                id = "rule-003",
-                orgId = orgId,
-                ruleName = "連續上班不超過6天",
-                ruleType = "soft",
-                penaltyScore = -50,
-                isEnabled = true,
-                isPremiumFeature = false
-            ),
-            SchedulingRule(
-                id = "rule-004",
-                orgId = orgId,
-                ruleName = "避免連續夜班",
-                ruleType = "soft",
-                penaltyScore = -30,
-                isEnabled = true,
-                isPremiumFeature = true
+                id = "rule-rest-between-shifts", orgId = orgId, ruleName = "輪班間隔需大於N小時",
+                description = "確保員工在兩次輪班之間有足夠的休息時間。", ruleType = "hard", penaltyScore = -1000,
+                isEnabled = true, parameters = mapOf("minHours" to "11")
             )
         )
     }
@@ -214,13 +166,8 @@ object TestDataGenerator {
     ): Schedule {
         return Schedule(
             id = "schedule-${UUID.randomUUID().toString().take(8)}",
-            orgId = orgId,
-            groupId = groupId,
-            month = month,
-            status = "draft",
-            generatedAt = Date(), // ⬅️ 修正 #7
-            totalScore = 850,
-            violatedRules = listOf()
+            orgId = orgId, groupId = groupId, month = month, status = "draft",
+            generatedAt = Date(), totalScore = -50, violatedRules = listOf("王小明: 連續上班 7 天，超過上限 6 天")
         )
     }
 
@@ -234,29 +181,22 @@ object TestDataGenerator {
     ): List<Assignment> {
         val dates = DateUtils.getDatesInMonth(month)
         val shiftTypes = listOf("shift-day", "shift-evening", "shift-night", "shift-off")
-
         return users.map { user ->
             val dailyShifts = dates.associate { date ->
                 val day = date.split("-").last()
                 val dayInt = day.toInt()
-
-                // 簡單的排班邏輯:每4天一個循環
-                val shiftIndex = (dayInt + user.id.hashCode().absoluteValue) % 4 // <-- 修正點
+                val shiftIndex = (dayInt + user.id.hashCode().absoluteValue) % shiftTypes.size
                 day to shiftTypes[shiftIndex]
             }
-
             Assignment(
-                id = "assignment-${user.id}",
-                scheduleId = scheduleId,
-                userId = user.id,
-                userName = user.name,
-                dailyShifts = dailyShifts
+                id = "assignment-${user.id}-${UUID.randomUUID().toString().take(4)}",
+                scheduleId = scheduleId, userId = user.id, userName = user.name, dailyShifts = dailyShifts
             )
         }
     }
 
     /**
-     * 產生完整的測試資料集
+     * 完整的測試資料集
      */
     data class TestDataSet(
         val organization: Organization,
@@ -269,48 +209,43 @@ object TestDataGenerator {
         val assignments: List<Assignment>
     )
 
+    /**
+     * 產生一份完整的測試資料集
+     */
     fun generateCompleteTestDataSet(
-        orgName: String = "測試公司",
-        ownerId: String, // <-- 7. 將 ownerId 參數從預設值改為必要參數
-        testMemberEmail: String // <-- 8. 新增 testMemberEmail 參數
+        orgName: String,
+        ownerId: String,
+        testMemberEmail: String
     ): TestDataSet {
-        // 8. 在產生組織時，明確傳入 ownerId
-        val org = generateOrganization(name = orgName, ownerId = ownerId)
-        var users = generateUsers(org.id) // <-- 將 val 改為 var
-        var groups = generateGroups(org.id, users.map { it.id }) // <-- 將 val 改為 var
-        // --- 9. 新增以下邏輯來建立與加入測試成員 ---
+        val orgCode = (1..8).map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".random() }.joinToString("")
+        val org = generateOrganization(name = orgName, ownerId = ownerId, orgCode = orgCode)
+        var users = generateUsers(org.id)
+        var groups = generateGroups(org.id, users.map { it.id })
+
+        // 如果提供了測試成員 Email，則建立並加入
         if (testMemberEmail.isNotBlank()) {
             val testMemberId = "test-member-${UUID.randomUUID().toString().take(8)}"
             val testMember = User(
                 id = testMemberId,
-                orgIds = listOf(org.id), // ✅ 使用新的 orgIds 欄位
-                currentOrgId = org.id,   // ✅ 同時設定 currentOrgId
+                orgIds = listOf(org.id),
+                currentOrgId = org.id,
                 email = testMemberEmail,
                 name = "測試成員",
                 role = "member",
-                joinedAt = Date()
+                joinedAt = Date(),
+                employmentStatus = mapOf(org.id to "active")
             )
-            // 將測試成員加入使用者列表
             users = users + testMember
-
             // 將測試成員加入第一個群組
             groups = groups.mapIndexed { index, group ->
-                if (index == 0) {
-                    group.copy(memberIds = group.memberIds + testMemberId)
-                } else {
-                    group
-                }
+                if (index == 0) group.copy(memberIds = group.memberIds + testMemberId) else group
             }
         }
 
         val shiftTypes = generateShiftTypes(org.id)
         val requests = generateRequests(org.id, users)
         val rules = generateSchedulingRules(org.id)
-
-        val schedules = groups.map { group ->
-            generateSchedule(org.id, group.id)
-        }
-
+        val schedules = groups.map { group -> generateSchedule(org.id, group.id) }
         val assignments = schedules.flatMap { schedule ->
             val group = groups.find { it.id == schedule.groupId }
             val groupUsers = users.filter { it.id in (group?.memberIds ?: emptyList()) }
@@ -319,8 +254,8 @@ object TestDataGenerator {
 
         return TestDataSet(
             organization = org,
-            users = users, // 回傳包含測試成員的使用者列表
-            groups = groups, // 回傳更新後的群組
+            users = users,
+            groups = groups,
             shiftTypes = shiftTypes,
             requests = requests,
             rules = rules,
