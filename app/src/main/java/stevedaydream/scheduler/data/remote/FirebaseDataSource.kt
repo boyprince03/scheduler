@@ -1,5 +1,4 @@
 // scheduler/data/remote/FirebaseDataSource.kt
-
 package stevedaydream.scheduler.data.remote
 
 import android.graphics.Insets.add
@@ -149,7 +148,48 @@ class FirebaseDataSource @Inject constructor(
         orgRef.id
     }
     // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun deleteOrganizationAndSubcollections(orgId: String): Result<Unit> = runCatching {
+        val orgRef = firestore.collection("organizations").document(orgId)
 
+        // 警告：在生產環境中，強烈建議使用 Cloud Function 進行遞歸刪除，以確保原子性和完整性。
+        // 這個客戶端實作是為了演示，可能會很慢或無法完整刪除。
+        // 此實作會刪除已知的子集合。
+
+        val batch = firestore.batch()
+
+        val subcollections = listOf("users", "groups", "shiftTypes", "schedulingRules", "schedules", "invites", "groupJoinRequests", "manpowerPlans")
+
+        for (collectionName in subcollections) {
+            val collectionRef = orgRef.collection(collectionName)
+            val documents = collectionRef.get().await()
+            for (document in documents) {
+                // 特殊處理 schedules，因為它還有下一層的 assignments 子集合
+                if (collectionName == "schedules") {
+                    val assignments = document.reference.collection("assignments").get().await()
+                    for (assignment in assignments) {
+                        batch.delete(assignment.reference)
+                    }
+                }
+                batch.delete(document.reference)
+            }
+        }
+
+        batch.delete(orgRef)
+        batch.commit().await()
+
+        // 從所有成員的 user 物件中移除此 orgId
+        val usersQuery = firestore.collection("users").whereArrayContains("orgIds", orgId).get().await()
+        firestore.runBatch { userBatch ->
+            usersQuery.documents.forEach { doc ->
+                userBatch.update(doc.reference, "orgIds", FieldValue.arrayRemove(orgId))
+                if (doc.getString("currentOrgId") == orgId) {
+                    userBatch.update(doc.reference, "currentOrgId", "")
+                }
+            }
+        }.await()
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganization(orgId: String): Flow<Organization?> {
         if (orgId.isBlank()) {
             return flowOf(null)
@@ -163,7 +203,17 @@ class FirebaseDataSource @Inject constructor(
                 } else null
             }
     }
-
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    fun observeAllOrganizations(): Flow<List<Organization>> {
+        return firestore.collection("organizations")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(Organization::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> {
         return firestore.collection("organizations")
             .whereEqualTo("ownerId", ownerId)
@@ -227,7 +277,15 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(inviteWithId.toFirestoreMap()).await()
         docRef.id
     }
-
+    fun observeAllUsers(): Flow<List<User>> {
+        return firestore.collection("users")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(User::class.java)?.copy(id = it.id)
+                }
+            }
+    }
     fun observeUsers(orgId: String): Flow<List<User>> {
         return firestore.collection("organizations/$orgId/users")
             .snapshots()

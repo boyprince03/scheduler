@@ -73,6 +73,17 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.createOrganizationAndFirstUser(org, user)
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    override fun observeAllOrganizations(): Flow<List<Organization>> {
+        // 直接從遠端觀察，因為管理員需要看到即時的完整列表
+        return remoteDataSource.observeAllOrganizations()
+    }
+
+    override suspend fun deleteOrganization(orgId: String): Result<Unit> {
+        // 直接呼叫遠端資料來源進行刪除
+        return remoteDataSource.deleteOrganizationAndSubcollections(orgId)
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     override fun observeOrganization(orgId: String): Flow<Organization?> {
         // 啟動同步監聽
         externalScope.launch {
@@ -162,12 +173,13 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun createUser(orgId: String, user: User): Result<String> {
         return remoteDataSource.createUser(orgId, user)
     }
+    override fun observeAllUsers(): Flow<List<User>> {
+        return remoteDataSource.observeAllUsers()
+    }
 
-    // 修正開始：由於 `UserDao` 中的查詢已被移除，此函式不再需要，由其他 ViewModel 直接從 Firestore 讀取
     override fun observeUsers(orgId: String): Flow<List<User>> {
         return remoteDataSource.observeUsers(orgId)
     }
-    // 修正結束
 
 
     override fun observeUser(userId: String): Flow<User?> {

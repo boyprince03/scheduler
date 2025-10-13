@@ -32,6 +32,8 @@ import androidx.navigation.NavHostController
 import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.presentation.navigation.Screen
 import stevedaydream.scheduler.util.showToast
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+import stevedaydream.scheduler.presentation.organization.OrganizationWithMemberCount
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
@@ -41,7 +43,7 @@ fun OrganizationListScreen(
     onOrganizationClick: (String) -> Unit,
     onAdminClick: () -> Unit
 ) {
-    val allOrganizations by viewModel.allOrganizations.collectAsState()
+    val organizationsInfo by viewModel.organizationsInfo.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val pendingRequests by viewModel.pendingRequests.collectAsState()
@@ -95,7 +97,7 @@ fun OrganizationListScreen(
                         Icon(Icons.Default.PersonAdd, contentDescription = "加入組織")
                     }
 
-                    val ownedOrgs = allOrganizations.filter { it.ownerId == currentUser?.id }
+                    val ownedOrgs = organizationsInfo.filter { it.organization.ownerId == currentUser?.id }.map { it.organization }
                     if (ownedOrgs.isNotEmpty() && (currentUser?.role == "org_admin" || currentUser?.role == "superuser")) {
                         BadgedBox(
                             badge = {
@@ -156,10 +158,10 @@ fun OrganizationListScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = if (allOrganizations.isEmpty()) Arrangement.Center else Arrangement.spacedBy(12.dp),
-                horizontalAlignment = if (allOrganizations.isEmpty()) Alignment.CenterHorizontally else Alignment.Start
+                verticalArrangement = if (organizationsInfo.isEmpty()) Arrangement.Center else Arrangement.spacedBy(12.dp),
+                horizontalAlignment = if (organizationsInfo.isEmpty()) Alignment.CenterHorizontally else Alignment.Start
             ) {
-                if (allOrganizations.isEmpty() && !isRefreshing) {
+                if (organizationsInfo.isEmpty() && !isRefreshing) {
                     item {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -185,10 +187,10 @@ fun OrganizationListScreen(
                     }
                 }
 
-                items(allOrganizations) { org ->
+                items(organizationsInfo) { orgInfo ->
                     OrganizationCard(
-                        organization = org,
-                        onClick = { onOrganizationClick(org.id) }
+                        organizationInfo = orgInfo,
+                        onClick = { onOrganizationClick(orgInfo.organization.id) }
                     )
                 }
             }
@@ -214,9 +216,10 @@ fun OrganizationListScreen(
 
 @Composable
 fun OrganizationCard(
-    organization: Organization,
+    organizationInfo: OrganizationWithMemberCount,
     onClick: () -> Unit
 ) {
+    val organization = organizationInfo.organization
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
@@ -245,6 +248,11 @@ fun OrganizationCard(
                 Text(
                     text = organization.orgName,
                     style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "成員: ${organizationInfo.memberCount} 人",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "方案: ${organization.plan}",
@@ -316,3 +324,4 @@ fun CreateOrganizationDialog(
         }
     )
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

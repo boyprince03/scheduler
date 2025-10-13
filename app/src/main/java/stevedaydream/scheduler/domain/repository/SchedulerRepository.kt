@@ -10,7 +10,10 @@ interface SchedulerRepository {
     fun observeOrganization(orgId: String): Flow<Organization?>
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
     suspend fun refreshOrganizations(ownerId: String): Result<Unit>
-
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    fun observeAllOrganizations(): Flow<List<Organization>>
+    suspend fun deleteOrganization(orgId: String): Result<Unit>
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit>
     suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit>
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit>
@@ -47,6 +50,7 @@ interface SchedulerRepository {
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String>
+    fun observeAllUsers(): Flow<List<User>>
     fun observeUsers(orgId: String): Flow<List<User>>
     fun observeUser(userId: String): Flow<User?>
     fun observeAdminStatus(userId: String): Flow<Boolean>

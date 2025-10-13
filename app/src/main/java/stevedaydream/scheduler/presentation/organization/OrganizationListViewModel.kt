@@ -16,6 +16,12 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import java.util.*
 import javax.inject.Inject
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+data class OrganizationWithMemberCount(
+    val organization: Organization,
+    val memberCount: Int
+)
+
 @HiltViewModel
 class OrganizationListViewModel @Inject constructor(
     private val repository: SchedulerRepository,
@@ -35,11 +41,9 @@ class OrganizationListViewModel @Inject constructor(
         repository.observeOrganizationsByOwner(ownerId)
     } ?: flowOf(emptyList())
 
-    // --- 修改開始 ---
     private val joinedOrganizationsFlow: Flow<List<Organization>> = _currentUser
         .filterNotNull()
         .flatMapLatest { user ->
-            // 從 user 物件中取得 orgIds 列表，並過濾掉任何空的字串
             val orgIds = user.orgIds.filter { it.isNotBlank() }
             if (orgIds.isEmpty()) {
                 flowOf(emptyList())
@@ -52,11 +56,21 @@ class OrganizationListViewModel @Inject constructor(
                 }
             }
         }
-    // --- 修改結束 ---
 
-    val allOrganizations: StateFlow<List<Organization>> =
+    val organizationsInfo: StateFlow<List<OrganizationWithMemberCount>> =
         combine(ownedOrganizationsFlow, joinedOrganizationsFlow) { owned, joined ->
             (owned + joined).distinctBy { it.id }
+        }.flatMapLatest { orgs ->
+            if (orgs.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                val memberCountFlows = orgs.map { org ->
+                    repository.observeUsers(org.id).map { users ->
+                        OrganizationWithMemberCount(org, users.size)
+                    }
+                }
+                combine(memberCountFlows) { it.toList() }
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
 
@@ -78,9 +92,9 @@ class OrganizationListViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            allOrganizations
-                .flatMapLatest { organizations ->
-                    val ownedOrgs = organizations.filter { it.ownerId == auth.currentUser?.uid }
+            organizationsInfo
+                .flatMapLatest { orgsInfo ->
+                    val ownedOrgs = orgsInfo.filter { it.organization.ownerId == auth.currentUser?.uid }.map { it.organization }
                     if (ownedOrgs.isEmpty()) {
                         flowOf(emptyList())
                     } else {
@@ -185,3 +199,4 @@ class OrganizationListViewModel @Inject constructor(
         }
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
