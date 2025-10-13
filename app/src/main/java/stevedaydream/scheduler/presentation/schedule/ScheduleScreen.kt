@@ -110,7 +110,42 @@ fun ScheduleScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("選擇月份: ${DateUtils.getDisplayMonth(selectedMonth)}")
                         }
+                        OutlinedButton(
+                            onClick = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Palette, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("班別設定")
+                        }
+                        OutlinedButton(
+                            onClick = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Rule, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("規則設定")
+                        }
 
+                        OutlinedButton(
+                            onClick = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.People, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("人力規劃儀表板")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("手動排班")
+                        }
                         Button(
                             onClick = { viewModel.generateSmartSchedule(selectedMonth) },
                             modifier = Modifier.fillMaxWidth(),
@@ -129,44 +164,6 @@ fun ScheduleScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("開始智慧排班")
                             }
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("手動排班")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.People, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("人力規劃儀表板")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Palette, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("班別設定")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Rule, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("規則設定")
                         }
                     }
                 }

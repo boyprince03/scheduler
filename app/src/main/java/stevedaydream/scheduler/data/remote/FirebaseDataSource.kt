@@ -15,6 +15,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import stevedaydream.scheduler.util.TestDataGenerator
 import java.util.Calendar
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+import kotlinx.coroutines.flow.combine
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -42,6 +45,42 @@ class FirebaseDataSource @Inject constructor(
                 penaltyScore = -1000,
                 isEnabled = true,
                 parameters = mapOf("minHours" to "11")
+            )
+        )
+    }
+
+    /**
+     * 產生一組預設的班別
+     */
+    private fun getDefaultShiftTypes(): List<ShiftType> {
+        return listOf(
+            ShiftType(
+                name = "放假",
+                shortCode = "OFF",
+                startTime = "00:00",
+                endTime = "00:00",
+                color = "#D0021B" // 紅色
+            ),
+            ShiftType(
+                name = "白班",
+                shortCode = "S",
+                startTime = "09:00",
+                endTime = "17:00",
+                color = "#4A90E2" // 藍色
+            ),
+            ShiftType(
+                name = "值班(夜)",
+                shortCode = "N",
+                startTime = "21:00",
+                endTime = "09:00",
+                color = "#000000" // 黑色
+            ),
+            ShiftType(
+                name = "值班(日)",
+                shortCode = "D",
+                startTime = "09:00",
+                endTime = "21:00",
+                color = "#7ED321" // 綠色
             )
         )
     }
@@ -116,7 +155,6 @@ class FirebaseDataSource @Inject constructor(
 
 
     // ==================== 組織 ====================
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
         val topLevelUserRef = firestore.collection("users").document(user.id)
@@ -144,11 +182,18 @@ class FirebaseDataSource @Inject constructor(
                 val ruleRef = rulesCollection.document()
                 batch.set(ruleRef, rule.toFirestoreMap())
             }
+
+            // 5. 建立預設班別
+            val shiftTypesCollection = orgRef.collection("shiftTypes")
+            getDefaultShiftTypes().forEach { shiftType ->
+                val shiftTypeRef = shiftTypesCollection.document()
+                // 將 orgId 和 id 寫入物件中，並直接傳遞物件本身
+                val finalShiftType = shiftType.copy(id = shiftTypeRef.id, orgId = orgRef.id)
+                batch.set(shiftTypeRef, finalShiftType)
+            }
         }.await()
         orgRef.id
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun deleteOrganizationAndSubcollections(orgId: String): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(orgId)
 
@@ -189,7 +234,6 @@ class FirebaseDataSource @Inject constructor(
             }
         }.await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganization(orgId: String): Flow<Organization?> {
         if (orgId.isBlank()) {
             return flowOf(null)
@@ -203,7 +247,6 @@ class FirebaseDataSource @Inject constructor(
                 } else null
             }
     }
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeAllOrganizations(): Flow<List<Organization>> {
         return firestore.collection("organizations")
             .snapshots()
@@ -213,7 +256,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>> {
         return firestore.collection("organizations")
             .whereEqualTo("ownerId", ownerId)
@@ -646,16 +688,34 @@ class FirebaseDataSource @Inject constructor(
             }
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
-        return firestore.collection("organizations/$orgId/shiftTypes")
-            .whereIn("groupId", listOf(null, groupId))
+        // 查詢一：組織層級的預設班別 (groupId 為 null)
+        val orgShiftTypesFlow = firestore.collection("organizations/$orgId/shiftTypes")
+            .whereEqualTo("groupId", null)
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull {
                     it.toObject(ShiftType::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
+
+        // 查詢二：特定群組的自訂班別
+        val groupShiftTypesFlow = firestore.collection("organizations/$orgId/shiftTypes")
+            .whereEqualTo("groupId", groupId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(ShiftType::class.java)?.copy(id = it.id, orgId = orgId)
+                }
+            }
+
+        // 合併兩個 Flow 的結果
+        return combine(orgShiftTypesFlow, groupShiftTypesFlow) { orgShifts, groupShifts ->
+            orgShifts + groupShifts
+        }
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/shiftTypes").document()
@@ -666,7 +726,7 @@ class FirebaseDataSource @Inject constructor(
             isTemplate = false,
             createdBy = auth.currentUser?.uid
         )
-        docRef.set(newShiftType.toFirestoreMap()).await()
+        docRef.set(newShiftType).await() // 直接傳遞物件
         docRef.id
     }
 
@@ -865,7 +925,7 @@ class FirebaseDataSource @Inject constructor(
 
             dataSet.shiftTypes.forEach { shiftType ->
                 val shiftTypeRef = orgRef.collection("shiftTypes").document(shiftType.id)
-                batch.set(shiftTypeRef, shiftType.toFirestoreMap())
+                batch.set(shiftTypeRef, shiftType) // 直接傳遞物件
             }
 
             dataSet.rules.forEach { rule ->

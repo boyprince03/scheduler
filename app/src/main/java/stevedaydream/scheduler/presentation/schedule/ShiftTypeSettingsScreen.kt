@@ -79,8 +79,34 @@ fun ShiftTypeSettingsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // ... 範本區 & 自訂區 ... (維持不變)
-                item { DividerWithText("從範本選擇 (加值功能)") }
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                item { DividerWithText("組織預設班別") }
+                if (uiState.organizationShiftTypes.isEmpty()) {
+                    item {
+                        Text(
+                            "此組織尚無預設班別",
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    items(uiState.organizationShiftTypes, key = { "org-${it.id}" }) { shiftType ->
+                        // 組織管理員或超級使用者可以編輯預設班別
+                        val canModify = currentUser?.role in listOf("org_admin", "superuser")
+                        ShiftTypeCard(
+                            shiftType = shiftType,
+                            canEdit = canModify,
+                            canDelete = false, // 預設班別原則上不給刪除
+                            onEditClick = {
+                                editingShiftType = shiftType
+                                showEditDialog = true
+                            },
+                            onDeleteClick = { /* 不處理 */ }
+                        )
+                    }
+                }
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
                 item { Spacer(Modifier.height(16.dp)); DividerWithText("群組自訂班別") }
                 if (uiState.groupCustomShiftTypes.isEmpty()) {
                     item {
@@ -218,14 +244,14 @@ fun EditShiftTypeDialog(
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("班別名稱") })
                 OutlinedTextField(value = shortCode, onValueChange = { shortCode = it }, label = { Text("代號 (1-2字)") }, singleLine = true)
 
-                // 🔽🔽🔽 替換時間選擇器 🔽🔽🔽
+                // 替換時間選擇器
                 TimeSelector(label = "開始時間", time = startTime) { showStartTimePicker = true }
                 TimeSelector(label = "結束時間", time = endTime) { showEndTimePicker = true }
-                // 🔼🔼🔼
 
-                // 🔽🔽🔽 替換顏色選擇器 🔽🔽🔽
+
+                //  替換顏色選擇器
                 ColorSelector(label = "顏色", colorHex = color) { showColorPicker = true }
-                // 🔼🔼🔼
+
             }
         },
         confirmButton = {
@@ -371,4 +397,3 @@ private fun TimePickerDialog(
         }
     }
 }
-

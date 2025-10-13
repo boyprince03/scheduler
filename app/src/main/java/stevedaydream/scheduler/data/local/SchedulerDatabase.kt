@@ -155,6 +155,11 @@ interface ShiftTypeDao {
 
     @Query("DELETE FROM shift_types WHERE orgId = :orgId")
     suspend fun deleteShiftTypesByOrg(orgId: String)
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    @Query("DELETE FROM shift_types WHERE orgId = :orgId AND (groupId IS NULL OR groupId = :groupId)")
+    suspend fun deleteDefaultAndGroupShiftTypes(orgId: String, groupId: String)
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 @Dao
@@ -315,7 +320,7 @@ interface GroupJoinRequestDao {
         OrganizationJoinRequest::class,   // ✨ 新增
         GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 13, // ✨ 版本號從 8 更新為 9
+    version = 14, // ✨ 版本號記得更新
     exportSchema = false
 )
 @TypeConverters(Converters::class)

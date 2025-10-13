@@ -73,7 +73,6 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.createOrganizationAndFirstUser(org, user)
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeAllOrganizations(): Flow<List<Organization>> {
         // 直接從遠端觀察，因為管理員需要看到即時的完整列表
         return remoteDataSource.observeAllOrganizations()
@@ -83,7 +82,6 @@ class SchedulerRepositoryImpl @Inject constructor(
         // 直接呼叫遠端資料來源進行刪除
         return remoteDataSource.deleteOrganizationAndSubcollections(orgId)
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     override fun observeOrganization(orgId: String): Flow<Organization?> {
         // 啟動同步監聽
         externalScope.launch {
@@ -268,7 +266,6 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.observeGroupJoinRequestsForUser(userId)
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>> {
         // 直接從 remote 觀察，確保管理員看到的是即時資料
         return remoteDataSource.observeGroupJoinRequestsForOrg(orgId)
@@ -277,7 +274,6 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit> {
         return remoteDataSource.updateGroupJoinRequestStatus(orgId, requestId, updates)
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     override suspend fun updateUserGroup(
         orgId: String,
@@ -311,20 +307,22 @@ class SchedulerRepositoryImpl @Inject constructor(
     }
 
     // ==================== 班別類型 ====================
-    // 🔽🔽🔽 替換掉舊的 observeShiftTypes 並新增其他方法 🔽🔽🔽
-    override fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
-        return remoteDataSource.observeShiftTypeTemplates()
-    }
-
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
         externalScope.launch {
             remoteDataSource.observeShiftTypes(orgId, groupId)
                 .collect { types ->
-                    database.shiftTypeDao().deleteShiftTypesByOrg(orgId) // 簡化處理
+                    // 改用更精確的刪除方式，只刪除預設和當前群組的快取
+                    database.shiftTypeDao().deleteDefaultAndGroupShiftTypes(orgId, groupId)
                     database.shiftTypeDao().insertShiftTypes(types)
                 }
         }
         return database.shiftTypeDao().getShiftTypesByOrgAndGroup(orgId, groupId)
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
+    override fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
+        return remoteDataSource.observeShiftTypeTemplates()
     }
 
     override suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> {
@@ -338,7 +336,6 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit> {
         return remoteDataSource.deleteShiftType(orgId, shiftTypeId)
     }
-    // 🔼🔼🔼 到此為止 🔼🔼🔼
 
     // ==================== 請求 ====================
     override suspend fun createRequest(orgId: String, request: Request): Result<String> {

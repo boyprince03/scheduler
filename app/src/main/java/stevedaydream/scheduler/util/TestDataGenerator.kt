@@ -95,24 +95,25 @@ object TestDataGenerator {
     fun generateShiftTypes(orgId: String): List<ShiftType> {
         return listOf(
             ShiftType(
-                id = "shift-day", orgId = orgId, name = "早班", shortCode = "D",
-                startTime = "09:00", endTime = "17:00", color = "#4A90E2"
+                id = "off", orgId = orgId, name = "放假", shortCode = "OFF",
+                startTime = "00:00", endTime = "00:00", color = "#D0021B" // 紅色
             ),
             ShiftType(
-                id = "shift-evening", orgId = orgId, name = "晚班", shortCode = "E",
-                startTime = "17:00", endTime = "01:00", color = "#F5A623"
+                id = "day-s", orgId = orgId, name = "白班", shortCode = "S",
+                startTime = "09:00", endTime = "17:00", color = "#4A90E2" // 淺藍色
             ),
             ShiftType(
-                id = "shift-night", orgId = orgId, name = "大夜班", shortCode = "N",
-                startTime = "01:00", endTime = "09:00", color = "#7B68EE"
+                id = "night-n", orgId = orgId, name = "值班(夜)", shortCode = "N",
+                startTime = "21:00", endTime = "09:00", color = "#000000" // 黑色
             ),
             ShiftType(
-                id = "shift-off", orgId = orgId, name = "休假", shortCode = "OFF",
-                startTime = "00:00", endTime = "00:00", color = "#9E9E9E"
+                id = "day-d", orgId = orgId, name = "值班(日)", shortCode = "D",
+                startTime = "09:00", endTime = "21:00", color = "#7ED321" // 綠色
             )
         )
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     /**
      * 產生測試請求 (請假/偏好)
      */
@@ -132,11 +133,12 @@ object TestDataGenerator {
                 Request(
                     id = "request-${UUID.randomUUID().toString().take(8)}",
                     orgId = orgId, userId = user.id, userName = user.name, date = dates[userIndex + 10],
-                    type = "shift_preference", details = mapOf("shiftId" to "shift-day"), status = "pending", createdAt = Date()
+                    type = "shift_preference", details = mapOf("shiftId" to "day-s"), status = "pending", createdAt = Date()
                 )
             )
         }
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     /**
      * 產生測試排班規則
@@ -180,7 +182,7 @@ object TestDataGenerator {
         month: String = DateUtils.getCurrentMonthString()
     ): List<Assignment> {
         val dates = DateUtils.getDatesInMonth(month)
-        val shiftTypes = listOf("shift-day", "shift-evening", "shift-night", "shift-off")
+        val shiftTypes = listOf("off", "day-s", "night-n", "day-d") // 使用更新後的班別 ID
         return users.map { user ->
             val dailyShifts = dates.associate { date ->
                 val day = date.split("-").last()
