@@ -40,7 +40,50 @@ class UserProfileViewModel @Inject constructor(
         loadInitialData()
     }
 
-    // 修改開始
+    // --- 修改開始 ---
+    // 函式：sendGroupJoinRequest
+    fun sendGroupJoinRequest(targetGroup: Group) {
+        val currentUser = _uiState.value.currentUser ?: return
+        val currentGroup = _uiState.value.currentGroup
+        if (currentUser.currentOrgId.isEmpty()) return
+
+        println("📨 [UserProfile] 處理組別加入請求: ${targetGroup.groupName}")
+
+        viewModelScope.launch {
+            // 檢查使用者是否為管理員
+            val isAdmin = currentUser.role == "org_admin" || currentUser.role == "superuser"
+
+            if (isAdmin) {
+                // 如果是管理員，直接更新組別
+                val result = repository.updateUserGroup(
+                    orgId = currentUser.currentOrgId,
+                    userId = currentUser.id,
+                    newGroupId = targetGroup.id,
+                    oldGroupId = currentGroup?.id
+                )
+                // 可以在這裡更新 UI 狀態或顯示成功訊息
+                _uiState.update { it.copy(requestResult = result.map { }) }
+
+            } else {
+                // 如果不是管理員，則發送加入申請
+                val request = GroupJoinRequest(
+                    id = UUID.randomUUID().toString(),
+                    orgId = currentUser.currentOrgId,
+                    userId = currentUser.id,
+                    userName = currentUser.name,
+                    targetGroupId = targetGroup.id,
+                    targetGroupName = targetGroup.groupName,
+                    status = "pending",
+                    requestedAt = Date()
+                )
+
+                val result = repository.createGroupJoinRequest(currentUser.currentOrgId, request)
+                _uiState.update { it.copy(requestResult = result.map { }) }
+            }
+        }
+    }
+    // --- 修改結束 ---
+
     private fun loadInitialData() {
         val userId = auth.currentUser?.uid
         if (userId == null) {
@@ -90,7 +133,6 @@ class UserProfileViewModel @Inject constructor(
             }
         }
     }
-    // 修改結束
 
     private fun loadOrganizationAndGroups(user: User) {
         // 使用 currentOrgId 來載入組織
@@ -190,30 +232,6 @@ class UserProfileViewModel @Inject constructor(
 
     fun clearSaveResult() {
         _uiState.update { it.copy(saveResult = null) }
-    }
-
-    fun sendGroupJoinRequest(targetGroup: Group) {
-        val currentUser = _uiState.value.currentUser ?: return
-        // ✅ 確保 currentOrgId 存在
-        if (currentUser.currentOrgId.isEmpty()) return
-
-        println("📨 [UserProfile] 發送組別加入申請: ${targetGroup.groupName}")
-
-        viewModelScope.launch {
-            val request = GroupJoinRequest(
-                id = UUID.randomUUID().toString(),
-                orgId = currentUser.currentOrgId, // ✅ 使用 currentOrgId
-                userId = currentUser.id,
-                userName = currentUser.name,
-                targetGroupId = targetGroup.id,
-                targetGroupName = targetGroup.groupName,
-                status = "pending",
-                requestedAt = Date()
-            )
-
-            val result = repository.createGroupJoinRequest(currentUser.currentOrgId, request) // ✅ 使用 currentOrgId
-            _uiState.update { it.copy(requestResult = result.map { }) }
-        }
     }
 
     fun clearRequestResult() {

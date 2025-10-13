@@ -401,7 +401,29 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(requestWithId.toFirestoreMap()).await()
         docRef.id
     }
+    // --- 修改開始 ---
+    // 函式：updateUserGroup
+    suspend fun updateUserGroup(
+        orgId: String,
+        userId: String,
+        newGroupId: String,
+        oldGroupId: String?
+    ): Result<Unit> = runCatching {
+        val groupsCollection = firestore.collection("organizations/$orgId/groups")
 
+        firestore.runBatch { batch ->
+            // 從舊群組移除 (如果有的話)
+            if (oldGroupId != null && oldGroupId != newGroupId) {
+                val oldGroupRef = groupsCollection.document(oldGroupId)
+                batch.update(oldGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayRemove(userId))
+            }
+
+            // 加入新群組
+            val newGroupRef = groupsCollection.document(newGroupId)
+            batch.update(newGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
+        }.await()
+    }
+    // --- 修改結束 ---
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String, leaseDuration: Long = 2 * 60 * 60 * 1000): Result<Boolean> = runCatching {
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 

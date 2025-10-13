@@ -95,6 +95,11 @@ interface SchedulerRepository {
     // ==================== 組別加入申請 ====================
     suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String>
 
+    // --- 修改開始 ---
+    suspend fun updateUserGroup(orgId: String, userId: String, newGroupId: String, oldGroupId: String?): Result<Unit>
+    // --- 修改結束 ---
+
+
     // ==================== 排班者生命週期 ====================
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String): Result<Boolean>
     suspend fun renewSchedulerLease(orgId: String, groupId: String, userId: String): Result<Boolean>

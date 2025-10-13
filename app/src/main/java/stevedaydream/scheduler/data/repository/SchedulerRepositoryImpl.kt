@@ -232,7 +232,16 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> {
         return remoteDataSource.createGroupJoinRequest(orgId, request)
     }
-
+    // --- 修改開始 ---
+    override suspend fun updateUserGroup(
+        orgId: String,
+        userId: String,
+        newGroupId: String,
+        oldGroupId: String?
+    ): Result<Unit> {
+        return remoteDataSource.updateUserGroup(orgId, userId, newGroupId, oldGroupId)
+    }
+    // --- 修改結束 ---
     // ==================== 排班者生命週期 ====================
     override suspend fun claimScheduler(
         orgId: String,
