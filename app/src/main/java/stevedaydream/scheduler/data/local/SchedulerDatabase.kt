@@ -1,3 +1,4 @@
+// 修改開始
 package stevedaydream.scheduler.data.local
 
 import androidx.room.*
@@ -208,6 +209,9 @@ interface ScheduleDao {
 
     @Query("DELETE FROM schedules WHERE orgId = :orgId")
     suspend fun deleteSchedulesByOrg(orgId: String)
+
+    @Query("DELETE FROM schedules WHERE orgId = :orgId AND groupId = :groupId")
+    suspend fun deleteSchedulesByGroup(orgId: String, groupId: String)
 }
 
 @Dao
@@ -320,7 +324,7 @@ interface GroupJoinRequestDao {
         OrganizationJoinRequest::class,   // ✨ 新增
         GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 15, // ✨ 版本號記得更新
+    version = 16, // ✨ 版本號記得更新
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -345,3 +349,4 @@ abstract class SchedulerDatabase : RoomDatabase() {
         clearAllTables()
     }
 }
+// 修改結束

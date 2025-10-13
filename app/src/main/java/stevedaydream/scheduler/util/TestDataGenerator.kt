@@ -113,7 +113,6 @@ object TestDataGenerator {
         )
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     /**
      * 產生測試請求 (請假/偏好)
      */
@@ -138,7 +137,6 @@ object TestDataGenerator {
             )
         }
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     /**
      * 產生測試排班規則
@@ -158,44 +156,81 @@ object TestDataGenerator {
         )
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     /**
-     * 產生測試班表
+     * 為指定的群組和使用者產生一份連貫的班表和班表分配資料
      */
-    fun generateSchedule(
+    private fun generateConsistentScheduleForGroup(
         orgId: String,
-        groupId: String,
-        month: String = DateUtils.getCurrentMonthString()
-    ): Schedule {
-        return Schedule(
-            id = "schedule-${UUID.randomUUID().toString().take(8)}",
-            orgId = orgId, groupId = groupId, month = month, status = "draft",
-            generatedAt = Date(), totalScore = -50, violatedRules = listOf("王小明: 連續上班 7 天，超過上限 6 天")
-        )
-    }
-
-    /**
-     * 產生測試班表分配
-     */
-    fun generateAssignments(
-        scheduleId: String,
+        group: Group,
         users: List<User>,
         month: String = DateUtils.getCurrentMonthString()
-    ): List<Assignment> {
+    ): Pair<Schedule, List<Assignment>> {
         val dates = DateUtils.getDatesInMonth(month)
-        val shiftTypes = listOf("off", "day-s", "night-n", "day-d") // 使用更新後的班別 ID
-        return users.map { user ->
-            val dailyShifts = dates.associate { date ->
+        val workShifts = listOf("day-s", "night-n", "day-d")
+        val allShiftIds = workShifts + "off"
+        val violations = mutableListOf<String>()
+
+        val assignments = users.map { user ->
+            val dailyShifts = mutableMapOf<String, String>()
+            dates.forEach { date ->
                 val day = date.split("-").last()
                 val dayInt = day.toInt()
-                val shiftIndex = (dayInt + user.id.hashCode().absoluteValue) % shiftTypes.size
-                day to shiftTypes[shiftIndex]
+
+                // 為王小明刻意製造連七的班表
+                if (user.name == "王小明" && dayInt in 2..8) {
+                    dailyShifts[day] = "day-d" // 連續上值班(日)
+                } else {
+                    // 其他人隨機排班
+                    val shiftIndex = (dayInt + user.id.hashCode().absoluteValue) % allShiftIds.size
+                    dailyShifts[day] = allShiftIds[shiftIndex]
+                }
             }
             Assignment(
                 id = "assignment-${user.id}-${UUID.randomUUID().toString().take(4)}",
-                scheduleId = scheduleId, userId = user.id, userName = user.name, dailyShifts = dailyShifts
+                scheduleId = "", // 會在後面統一設定
+                userId = user.id,
+                userName = user.name,
+                dailyShifts = dailyShifts
             )
         }
+
+        // 檢查規則違反 (簡化版)
+        assignments.find { it.userName == "王小明" }?.let { assignment ->
+            var consecutiveDays = 0
+            var maxConsecutive = 0
+            dates.forEach { date ->
+                val day = date.split("-").last()
+                if (assignment.dailyShifts[day] != "off") {
+                    consecutiveDays++
+                } else {
+                    maxConsecutive = maxOf(maxConsecutive, consecutiveDays)
+                    consecutiveDays = 0
+                }
+            }
+            maxConsecutive = maxOf(maxConsecutive, consecutiveDays)
+            if (maxConsecutive > 6) {
+                violations.add("${assignment.userName}: 連續上班 ${maxConsecutive} 天，超過上限 6 天")
+            }
+        }
+
+        val schedule = Schedule(
+            id = "schedule-${group.id}-${UUID.randomUUID().toString().take(4)}",
+            orgId = orgId,
+            groupId = group.id,
+            month = month,
+            status = "draft",
+            generatedAt = Date(),
+            totalScore = if (violations.isNotEmpty()) -50 else 0,
+            violatedRules = violations
+        )
+
+        // 將最終的 scheduleId 回填到 assignments
+        val finalAssignments = assignments.map { it.copy(scheduleId = schedule.id) }
+
+        return schedule to finalAssignments
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     /**
      * 完整的測試資料集
@@ -247,12 +282,16 @@ object TestDataGenerator {
         val shiftTypes = generateShiftTypes(org.id)
         val requests = generateRequests(org.id, users)
         val rules = generateSchedulingRules(org.id)
-        val schedules = groups.map { group -> generateSchedule(org.id, group.id) }
-        val assignments = schedules.flatMap { schedule ->
-            val group = groups.find { it.id == schedule.groupId }
-            val groupUsers = users.filter { it.id in (group?.memberIds ?: emptyList()) }
-            generateAssignments(schedule.id, groupUsers, schedule.month)
+
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+        // 使用新方法產生連貫的班表和分配資料
+        val schedulesAndAssignments = groups.map { group ->
+            val groupUsers = users.filter { it.id in group.memberIds }
+            generateConsistentScheduleForGroup(org.id, group, groupUsers)
         }
+        val schedules = schedulesAndAssignments.map { it.first }
+        val assignments = schedulesAndAssignments.flatMap { it.second }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
         return TestDataSet(
             organization = org,

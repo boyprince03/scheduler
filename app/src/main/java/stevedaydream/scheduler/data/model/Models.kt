@@ -1,3 +1,4 @@
+// 修改開始
 package stevedaydream.scheduler.data.model
 
 import androidx.room.Embedded
@@ -135,7 +136,8 @@ data class ShiftType(
     val endTime: String = "",
     val color: String = "#4A90E2",
     val groupId: String? = null,
-    val isTemplate: Boolean = false,
+    @get:PropertyName("template") @set:PropertyName("template")
+    var isTemplate: Boolean = false,
     val templateId: String? = null,
     val createdBy: String? = null
 ) {
@@ -301,3 +303,4 @@ data class Assignment(
         "dailyShifts" to dailyShifts
     )
 }
+// 修改結束

@@ -1,3 +1,4 @@
+// 修改開始
 // scheduler/presentation/admin/AdminViewModel.kt
 package stevedaydream.scheduler.presentation.admin
 
@@ -5,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import stevedaydream.scheduler.data.model.Organization
@@ -61,6 +63,7 @@ class AdminViewModel @Inject constructor(
                         combine(memberCountFlows) { it.toList() }
                     }
                 }
+                .flowOn(Dispatchers.IO) // ✅ 將上述複雜的合併操作移至背景執行緒
                 .catch { e ->
                     _uiState.update { it.copy(error = e.localizedMessage, isLoading = false) }
                 }
@@ -102,3 +105,4 @@ class AdminViewModel @Inject constructor(
         }
     }
 }
+// 修改結束

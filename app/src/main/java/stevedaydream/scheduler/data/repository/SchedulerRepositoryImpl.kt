@@ -1,3 +1,4 @@
+// 修改開始
 // scheduler/data/repository/SchedulerRepositoryImpl.kt
 package stevedaydream.scheduler.data.repository
 
@@ -439,7 +440,7 @@ class SchedulerRepositoryImpl @Inject constructor(
         externalScope.launch {
             remoteDataSource.observeSchedules(orgId, groupId)
                 .collect { schedules ->
-                    database.scheduleDao().deleteSchedulesByOrg(orgId)
+                    database.scheduleDao().deleteSchedulesByGroup(orgId, groupId)
                     schedules.forEach { database.scheduleDao().insertSchedule(it) }
                 }
         }
@@ -505,3 +506,4 @@ class SchedulerRepositoryImpl @Inject constructor(
         database.clearAllData()
     }
 }
+// 修改結束
