@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.font.FontWeight
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -208,6 +209,16 @@ fun ScheduleDetailTable(
 
     val assignmentMap = assignments.associate { it.userId to it.dailyShifts }
     val shiftTypeMap = shiftTypes.associateBy { it.id }
+    // ✅ Debug 資訊
+    LaunchedEffect(shiftTypes, assignments) {
+        println("🔍 [ScheduleDetailTable] Debug:")
+        println("   ShiftTypes: ${shiftTypes.map { "${it.id}:${it.shortCode}" }}")
+        println("   AssignmentMap keys: ${assignmentMap.keys}")
+        if (assignmentMap.isNotEmpty()) {
+            val firstUser = assignmentMap.entries.first()
+            println("   第一位使用者的排班: ${firstUser.value.entries.take(3)}")
+        }
+    }
 
     Column(
         modifier = Modifier
