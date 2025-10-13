@@ -299,6 +299,7 @@ data class Assignment(
     val dailyShifts: Map<String, String> = emptyMap()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "userId" to userId, // ✅ 新增，這是最重要的欄位
         "userName" to userName,
         "dailyShifts" to dailyShifts
     )

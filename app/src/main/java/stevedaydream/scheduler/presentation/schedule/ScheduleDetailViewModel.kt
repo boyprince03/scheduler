@@ -1,5 +1,6 @@
 package stevedaydream.scheduler.presentation.schedule
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,40 +43,38 @@ class ScheduleDetailViewModel @Inject constructor(
     private fun loadData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            // 監聽班表
-            repository.observeSchedule(scheduleId).collect { schedule ->
-                _uiState.update { it.copy(schedule = schedule) }
-            }
-        }
 
-        viewModelScope.launch {
-            // 監聽班表分配
-            repository.observeAssignments(scheduleId).collect { assignments ->
-                _uiState.update { it.copy(assignments = assignments) }
-            }
-        }
-
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-        viewModelScope.launch {
-            // 獲取班別類型 (持續監聽)
-            repository.observeShiftTypes(orgId, groupId).collect { shiftTypes ->
-                _uiState.update { it.copy(shiftTypes = shiftTypes) }
-            }
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
-
-        viewModelScope.launch {
-            // 結合使用者和群組資料
-            repository.observeGroup(groupId)
+            val scheduleFlow = repository.observeSchedule(scheduleId)
+            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改此處函式呼叫 ▼▼▼▼▼▼▼▼▼▼▼▼
+            val assignmentsFlow = repository.observeAssignments(orgId, scheduleId)
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+            val shiftTypesFlow = repository.observeShiftTypes(orgId, groupId)
+            val usersFlow = repository.observeGroup(groupId)
                 .filterNotNull()
                 .flatMapLatest { group ->
                     repository.observeUsers(orgId).map { allUsers ->
                         allUsers.filter { it.id in group.memberIds }
                     }
                 }
-                .collect { usersInGroup ->
-                    _uiState.update { it.copy(users = usersInGroup, isLoading = false) }
-                }
+
+            combine(
+                scheduleFlow,
+                assignmentsFlow,
+                shiftTypesFlow,
+                usersFlow
+            ) { schedule, assignments, shiftTypes, users ->
+                ScheduleDetailUiState(
+                    isLoading = false,
+                    schedule = schedule,
+                    assignments = assignments,
+                    shiftTypes = shiftTypes,
+                    users = users
+                )
+            }.catch { e ->
+                // ... (省略錯誤處理) ...
+            }.collect { newState ->
+                _uiState.value = newState
+            }
         }
     }
 }

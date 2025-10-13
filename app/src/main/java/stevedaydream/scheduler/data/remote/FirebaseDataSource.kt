@@ -860,7 +860,25 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    suspend fun createScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<String> = runCatching {
+        val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)
 
+        firestore.runBatch { batch ->
+            // 1. 建立 Schedule 文件
+            batch.set(scheduleRef, schedule.toFirestoreMap())
+
+            // 2. 在其子集合中建立所有 Assignment 文件
+            assignments.forEach { assignment ->
+                // 確保 assignment 物件中的 scheduleId 是正確的
+                val finalAssignment = assignment.copy(scheduleId = schedule.id)
+                val assignmentRef = scheduleRef.collection("assignments").document(finalAssignment.id)
+                batch.set(assignmentRef, finalAssignment.toFirestoreMap())
+            }
+        }.await()
+
+        // 回傳建立成功的 scheduleId
+        schedule.id
+    }
     // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> = runCatching {
         val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)

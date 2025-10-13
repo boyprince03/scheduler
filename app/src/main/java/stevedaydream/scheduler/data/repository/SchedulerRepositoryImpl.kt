@@ -435,6 +435,9 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> {
         return remoteDataSource.createSchedule(orgId, schedule)
     }
+    override suspend fun createScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<String> {
+        return remoteDataSource.createScheduleAndAssignments(orgId, schedule, assignments)
+    }
 
     override fun observeSchedules(orgId: String, groupId: String): Flow<List<Schedule>> {
         externalScope.launch {
@@ -466,17 +469,17 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.createAssignment(orgId, scheduleId, assignment)
     }
 
-    override fun observeAssignments(scheduleId: String): Flow<List<Assignment>> {
+    override fun observeAssignments(orgId: String, scheduleId: String): Flow<List<Assignment>> {
+        // 現在我們有 orgId，可以直接且可靠地啟動遠端資料監聽
         externalScope.launch {
-            // 需要從 Schedule 取得 orgId
-            database.scheduleDao().getSchedule(scheduleId).first()?.let { schedule ->
-                remoteDataSource.observeAssignments(schedule.orgId, scheduleId)
-                    .collect { assignments ->
-                        database.assignmentDao().deleteAssignmentsBySchedule(scheduleId)
-                        database.assignmentDao().insertAssignments(assignments)
-                    }
-            }
+            remoteDataSource.observeAssignments(orgId, scheduleId)
+                .collect { remoteAssignments ->
+                    // 當遠端資料更新時，同步到本地資料庫
+                    database.assignmentDao().deleteAssignmentsBySchedule(scheduleId)
+                    database.assignmentDao().insertAssignments(remoteAssignments)
+                }
         }
+        // UI 層永遠從本地資料庫讀取，確保了單一資料來源
         return database.assignmentDao().getAssignmentsBySchedule(scheduleId)
     }
     // ==================== 人力規劃 ====================

@@ -22,7 +22,8 @@ import stevedaydream.scheduler.presentation.schedule.SchedulingRulesScreen
 import stevedaydream.scheduler.presentation.schedule.ShiftTypeSettingsScreen
 import stevedaydream.scheduler.presentation.user.UserProfileScreen
 import stevedaydream.scheduler.presentation.user.BasicInfoScreen
-
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 sealed class Screen(val route: String) {
     object Login : Screen("login")
     object BasicInfo : Screen("basic_info")
@@ -243,7 +244,15 @@ fun NavigationGraph(
             // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
         }
 
-        composable(Screen.ManualSchedule.route) { backStackEntry ->
+        composable(
+            route = Screen.ManualSchedule.route,
+            arguments = listOf(
+                navArgument("scheduleId") {
+                    type = NavType.StringType
+                    nullable = true // 關鍵：聲明參數可以為 null
+                }
+            )
+        ) { backStackEntry ->
             ManualScheduleScreen(
                 onBackClick = { navController.popBackStack() },
                 onSaveSuccess = { navController.popBackStack() }

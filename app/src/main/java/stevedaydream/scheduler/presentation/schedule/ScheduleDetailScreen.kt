@@ -41,9 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 fun ScheduleDetailScreen(
     viewModel: ScheduleDetailViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     onEditClick: (month: String) -> Unit
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val schedule = uiState.schedule
@@ -58,13 +56,11 @@ fun ScheduleDetailScreen(
                     }
                 },
                 actions = {
-                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                     if (schedule != null) {
                         IconButton(onClick = { onEditClick(schedule.month) }) {
                             Icon(Icons.Default.Edit, contentDescription = "編輯班表")
                         }
                     }
-                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     IconButton(onClick = { /* TODO: 實作分享功能 */ }) {
                         Icon(Icons.Default.Share, contentDescription = "分享")
                     }
@@ -72,10 +68,10 @@ fun ScheduleDetailScreen(
             )
         }
     ) { padding ->
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 (更新UI邏輯) ▼▼▼▼▼▼▼▼▼▼▼▼
         if (uiState.isLoading) {
             LoadingIndicator(modifier = Modifier.padding(padding))
         } else if (schedule != null) {
-            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -99,7 +95,6 @@ fun ScheduleDetailScreen(
                     )
                 }
 
-                // 新增：排班結果分析區塊
                 if (schedule.generationMethod == "smart" && schedule.violatedRules.isNotEmpty()) {
                     item {
                         AnalysisCard(
@@ -109,8 +104,13 @@ fun ScheduleDetailScreen(
                     }
                 }
             }
-            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+        } else {
+            // Handle the case where the schedule could not be loaded
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text("無法載入班表資料")
+            }
         }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     }
 }
 

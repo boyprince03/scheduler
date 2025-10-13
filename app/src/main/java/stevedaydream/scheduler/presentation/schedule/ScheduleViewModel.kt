@@ -131,9 +131,10 @@ class ScheduleViewModel @Inject constructor(
         viewModelScope.launch {
             _isGenerating.value = true
             try {
-                // 在生成排班表前，先從 repository 取得該月份的人力規劃資料
+                // 從 repository 取得該月份的人力規劃資料
                 val manpowerPlan = repository.observeManpowerPlan(currentOrgId, currentGroupId, month).firstOrNull()
 
+                // 1. ScheduleGenerator 產生 Schedule 和 Assignments 物件 (此部分不變)
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
@@ -142,17 +143,20 @@ class ScheduleViewModel @Inject constructor(
                     shiftTypes = _shiftTypes.value,
                     requests = _requests.value,
                     rules = _rules.value.filter { it.isEnabled },
-                    manpowerPlan = manpowerPlan // 將取得的 manpowerPlan 傳入
+                    manpowerPlan = manpowerPlan
                 )
 
-                repository.createSchedule(currentOrgId, result.schedule)
-                result.assignments.forEach { assignment ->
-                    repository.createAssignment(currentOrgId, result.schedule.id, assignment)
-                }
+                // 2. 使用新的原子操作函式，一次性寫入所有資料
+                repository.createScheduleAndAssignments(
+                    orgId = currentOrgId,
+                    schedule = result.schedule,
+                    assignments = result.assignments
+                ).getOrThrow() // 如果批次寫入失敗，直接拋出例外
 
                 _generateSuccess.emit(Unit)
             } catch (e: Exception) {
-                println("生成失敗: ${e.message}")
+                println("❌ [ScheduleVM] 智慧排班生成或儲存失敗: ${e.message}")
+                // 未來可以在此處更新 UI State 來向使用者顯示錯誤訊息
             } finally {
                 _isGenerating.value = false
             }
