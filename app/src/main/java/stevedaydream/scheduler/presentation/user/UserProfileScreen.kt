@@ -1,3 +1,4 @@
+// scheduler/presentation/user/UserProfileScreen.kt
 package stevedaydream.scheduler.presentation.user
 
 import androidx.compose.animation.AnimatedVisibility
@@ -116,7 +117,6 @@ fun UserProfileScreen(
                     }
                 } else {
                     items(uiState.organizationsInfo, key = { it.organization.id }) { orgInfo ->
-                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                         OrganizationAndGroupCard(
                             orgInfo = orgInfo,
                             currentUser = uiState.currentUser,
@@ -200,7 +200,6 @@ private fun OrganizationAndGroupCard(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     } else {
-                        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                         orgInfo.groups.forEach { group ->
                             val isMember = currentUser?.let { user -> group.memberIds.contains(user.id) } ?: false
                             val pendingRequest = pendingRequests.find { it.targetGroupId == group.id && it.status == "pending" }
@@ -231,18 +230,19 @@ private fun OrganizationAndGroupCard(
     }
 }
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 @Composable
 private fun GroupListItem(
     group: Group,
-    pendingRequest: GroupJoinRequest?, // 新增參數
+    pendingRequest: GroupJoinRequest?,
     isMember: Boolean,
     onJoinClick: () -> Unit,
-    onCancelClick: () -> Unit          // 新增參數
+    onCancelClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = !isMember, onClick = onJoinClick)
+            // 移除整行點擊事件
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -263,9 +263,10 @@ private fun GroupListItem(
 
         when {
             isMember -> {
-                // 已是成員，不顯示按鈕
+                // 如果已是成員，不顯示任何按鈕
             }
             pendingRequest != null -> {
+                // 如果有待審核的申請，顯示「取消申請」按鈕
                 OutlinedButton(
                     onClick = onCancelClick,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -275,13 +276,18 @@ private fun GroupListItem(
                 }
             }
             else -> {
-                Button(onClick = onJoinClick, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                // 否則，顯示「申請加入」按鈕
+                Button(
+                    onClick = onJoinClick,
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
                     Text("申請加入")
                 }
             }
         }
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
 @Composable
@@ -400,4 +406,3 @@ private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
         Text(text = value, style = MaterialTheme.typography.bodyMedium)
     }
 }
-

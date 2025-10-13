@@ -1,3 +1,4 @@
+// scheduler/domain/repository/SchedulerRepository.kt
 package stevedaydream.scheduler.domain.repository
 
 import kotlinx.coroutines.flow.Flow
@@ -58,6 +59,10 @@ interface SchedulerRepository {
     fun observeGroup(groupId: String): Flow<Group?>
     // ==================== 組別加入申請 ====================
     suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String>
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>>
+    suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit>
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     suspend fun updateUserGroup(orgId: String, userId: String, newGroupId: String, oldGroupId: String?): Result<Unit>
 
 

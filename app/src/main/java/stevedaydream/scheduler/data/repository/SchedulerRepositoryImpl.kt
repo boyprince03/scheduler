@@ -249,6 +249,18 @@ class SchedulerRepositoryImpl @Inject constructor(
         // 直接從遠端觀察，確保即時性
         return remoteDataSource.observeGroupJoinRequestsForUser(userId)
     }
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    override fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>> {
+        // 直接從 remote 觀察，確保管理員看到的是即時資料
+        return remoteDataSource.observeGroupJoinRequestsForOrg(orgId)
+    }
+
+    override suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit> {
+        return remoteDataSource.updateGroupJoinRequestStatus(orgId, requestId, updates)
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
     override suspend fun updateUserGroup(
         orgId: String,
         userId: String,

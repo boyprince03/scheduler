@@ -45,7 +45,6 @@ class FirebaseDataSource @Inject constructor(
         )
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> = runCatching {
         val userRef = firestore.collection("users").document(userId)
         val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
@@ -88,7 +87,6 @@ class FirebaseDataSource @Inject constructor(
             batch.update(subCollectionUserRef, statusUpdate)
         }.await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
     // ==================== 組織 ====================
@@ -452,6 +450,27 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>> {
+        return firestore.collection("organizations/$orgId/groupJoinRequests")
+            .orderBy("requestedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(GroupJoinRequest::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/groupJoinRequests")
+            .document(requestId)
+            .update(updates)
+            .await()
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
     suspend fun updateUserGroup(
         orgId: String,
         userId: String,
