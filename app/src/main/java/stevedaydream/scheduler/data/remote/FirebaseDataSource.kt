@@ -2,6 +2,7 @@
 
 package stevedaydream.scheduler.data.remote
 
+import android.graphics.Insets.add
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -14,6 +15,7 @@ import stevedaydream.scheduler.data.model.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import stevedaydream.scheduler.util.TestDataGenerator
+import java.util.Calendar
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -43,6 +45,31 @@ class FirebaseDataSource @Inject constructor(
                 parameters = mapOf("minHours" to "11")
             )
         )
+    }
+    suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit> = runCatching {
+        val thirtyDaysFromNow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 30) }.time
+        firestore.collection("organizations").document(orgId)
+            .update(mapOf(
+                "isActive" to false,
+                "deletionScheduledAt" to thirtyDaysFromNow
+            ))
+            .await()
+    }
+
+    suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit> = runCatching {
+        val orgRef = firestore.collection("organizations").document(orgId)
+        val newOwnerUserRef = firestore.collection("users").document(newOwnerId)
+        val newOwnerOrgUserRef = orgRef.collection("users").document(newOwnerId)
+
+        firestore.runTransaction { transaction ->
+            // 1. 更新組織的 ownerId
+            transaction.update(orgRef, "ownerId", newOwnerId)
+
+            // 2. 更新新擁有者的角色 (在頂層 user 和子集合 user 中)
+            transaction.update(newOwnerUserRef, "role", "org_admin")
+            transaction.update(newOwnerOrgUserRef, "role", "org_admin")
+
+        }.await()
     }
 
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> = runCatching {
@@ -90,9 +117,11 @@ class FirebaseDataSource @Inject constructor(
 
 
     // ==================== 組織 ====================
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
         val topLevelUserRef = firestore.collection("users").document(user.id)
+        val subCollectionUserRef = orgRef.collection("users").document(user.id) // 取得子集合中的使用者參照
 
         val orgWithId = org.copy(id = orgRef.id)
         val userWithOrgId = user.copy(
@@ -101,10 +130,17 @@ class FirebaseDataSource @Inject constructor(
         )
 
         firestore.runBatch { batch ->
+            // 1. 建立組織文件
             batch.set(orgRef, orgWithId.toFirestoreMap())
+
+            // 2. 更新頂層的使用者文件
             batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
 
-            val rulesCollection = firestore.collection("organizations/${orgRef.id}/schedulingRules")
+            // 3. (新增的步驟) 在組織的子集合中建立使用者文件
+            batch.set(subCollectionUserRef, userWithOrgId.toFirestoreMap())
+
+            // 4. 建立預設規則
+            val rulesCollection = orgRef.collection("schedulingRules")
             getDefaultSchedulingRules().forEach { rule ->
                 val ruleRef = rulesCollection.document()
                 batch.set(ruleRef, rule.toFirestoreMap())
@@ -112,6 +148,7 @@ class FirebaseDataSource @Inject constructor(
         }.await()
         orgRef.id
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun observeOrganization(orgId: String): Flow<Organization?> {
         if (orgId.isBlank()) {
@@ -451,8 +488,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>> {
         return firestore.collection("organizations/$orgId/groupJoinRequests")
             .orderBy("requestedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
@@ -470,7 +505,6 @@ class FirebaseDataSource @Inject constructor(
             .update(updates)
             .await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun updateUserGroup(
         orgId: String,

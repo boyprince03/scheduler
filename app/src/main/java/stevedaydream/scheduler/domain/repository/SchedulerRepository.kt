@@ -11,7 +11,8 @@ interface SchedulerRepository {
     fun observeOrganizationsByOwner(ownerId: String): Flow<List<Organization>>
     suspend fun refreshOrganizations(ownerId: String): Result<Unit>
 
-
+    suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit>
+    suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit>
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit>
     suspend fun updateEmploymentStatus(orgId: String, userId: String, status: String): Result<Unit>
 

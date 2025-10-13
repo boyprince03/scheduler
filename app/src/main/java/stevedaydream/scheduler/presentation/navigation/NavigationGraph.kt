@@ -11,6 +11,7 @@ import stevedaydream.scheduler.presentation.group.GroupListScreen
 import stevedaydream.scheduler.presentation.invite.InviteManagementScreen
 import stevedaydream.scheduler.presentation.invite.JoinOrganizationScreen
 import stevedaydream.scheduler.presentation.invite.ReviewJoinRequestsScreen
+import stevedaydream.scheduler.presentation.members.MemberListScreen
 import stevedaydream.scheduler.presentation.organization.OrganizationListScreen
 import stevedaydream.scheduler.presentation.qr.QRScannerScreen
 import stevedaydream.scheduler.presentation.schedule.ManpowerScreen
@@ -24,11 +25,16 @@ import stevedaydream.scheduler.presentation.user.BasicInfoScreen
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
-    object BasicInfo : Screen("basic_info") // ✅ 1. 新增 BasicInfo Screen
+    object BasicInfo : Screen("basic_info")
     object OrganizationList : Screen("organization_list")
     object GroupList : Screen("group_list/{orgId}") {
         fun createRoute(orgId: String) = "group_list/$orgId"
     }
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    object MemberList : Screen("member_list/{orgId}") {
+        fun createRoute(orgId: String) = "member_list/$orgId"
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     object Schedule : Screen("schedule/{orgId}/{groupId}") {
         fun createRoute(orgId: String, groupId: String) = "schedule/$orgId/$groupId"
     }
@@ -53,22 +59,15 @@ sealed class Screen(val route: String) {
         fun createRoute(orgId: String, groupId: String, month: String) =
             "manpower_dashboard/$orgId/$groupId/$month"
     }
-    object Admin : Screen("admin") // ✅ 2. 新增 Admin Screen
+    object Admin : Screen("admin")
     object UserProfile : Screen("user_profile")
-    // 邀請管理
     object InviteManagement : Screen("invite_management/{orgId}") {
         fun createRoute(orgId: String) = "invite_management/$orgId"
     }
-
-    // 加入組織
     object JoinOrganization : Screen("join_organization")
-
-    // 審核申請
     object ReviewRequests : Screen("review_requests/{orgId}") {
         fun createRoute(orgId: String) = "review_requests/$orgId"
     }
-
-    // QR Scanner
     object QRScanner : Screen("qr_scanner")
 }
 
@@ -78,7 +77,7 @@ sealed class Screen(val route: String) {
 fun NavigationGraph(
     navController: NavHostController,
     startDestination: String = Screen.Login.route,
-    onGoogleSignInClick: () -> Unit = {} // 这个参数已经存在，很好
+    onGoogleSignInClick: () -> Unit = {}
 
 ) {
     NavHost(
@@ -87,7 +86,7 @@ fun NavigationGraph(
     ) {
         composable(Screen.Login.route) {
             LoginScreen(
-                onLoginSuccess = { isNewUser -> // ✅ 2. 修改 onLoginSuccess 的參數
+                onLoginSuccess = { isNewUser ->
                     val destination = if (isNewUser) {
                         Screen.BasicInfo.route
                     } else {
@@ -101,7 +100,6 @@ fun NavigationGraph(
             )
         }
 
-        // ✅ 3. 新增 BasicInfoScreen 的 composable
         composable(Screen.BasicInfo.route) {
             BasicInfoScreen(
                 onSaveSuccess = {
@@ -111,7 +109,6 @@ fun NavigationGraph(
                 }
             )
         }
-        // 邀請管理
         composable(Screen.InviteManagement.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             InviteManagementScreen(
@@ -120,16 +117,14 @@ fun NavigationGraph(
             )
         }
 
-        // 加入組織
         composable(Screen.JoinOrganization.route) {
             JoinOrganizationScreen(
-                navController = navController, // <-- 傳入 navController
+                navController = navController,
                 onJoinSuccess = { navController.popBackStack() },
                 onBackClick = { navController.popBackStack() }
             )
         }
 
-        // 審核申請
         composable(Screen.ReviewRequests.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             ReviewJoinRequestsScreen(
@@ -138,11 +133,9 @@ fun NavigationGraph(
             )
         }
 
-        // QR Scanner
         composable(Screen.QRScanner.route) {
             QRScannerScreen(
                 onCodeScanned = { code ->
-                    // 導航回加入組織頁面並帶入掃描結果
                     navController.previousBackStackEntry
                         ?.savedStateHandle
                         ?.set("scanned_code", code)
@@ -154,17 +147,15 @@ fun NavigationGraph(
 
         composable(Screen.OrganizationList.route) {
             OrganizationListScreen(
-                navController = navController, // ✅ 傳入 navController
+                navController = navController,
                 onOrganizationClick = { orgId ->
                     navController.navigate(Screen.GroupList.createRoute(orgId))
                 },
-                // ✅ 3. 新增 onAdminClick 導航事件
                 onAdminClick = {
                     navController.navigate(Screen.Admin.route)
                 }
             )
         }
-        // ✅ 4. 新增 AdminScreen 的 composable
         composable(Screen.Admin.route) {
             AdminScreen(
                 onBackClick = { navController.popBackStack() }
@@ -179,14 +170,26 @@ fun NavigationGraph(
                     navController.navigate(Screen.Schedule.createRoute(orgId, groupId))
                 },
                 onBackClick = { navController.popBackStack() },
-                // vvvvvvvvvvvv 更新的導航事件 vvvvvvvvvvvv
                 onNavigateToInviteManagement = { org ->
                     navController.navigate(Screen.InviteManagement.createRoute(org))
+                },
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                onNavigateToMemberList = { org ->
+                    navController.navigate(Screen.MemberList.createRoute(org))
                 }
-                // ^^^^^^^^^^^^ 更新的導航事件 ^^^^^^^^^^^^
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             )
         }
 
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+        composable(Screen.MemberList.route) { backStackEntry ->
+            val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
+            MemberListScreen(
+                orgId = orgId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
         composable(Screen.Schedule.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
@@ -226,7 +229,6 @@ fun NavigationGraph(
         }
 
         composable(Screen.ScheduleDetail.route) { backStackEntry ->
-            // 雖然 ViewModel 會處理參數，但保留它們以備不時之需
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
             val scheduleId = backStackEntry.arguments?.getString("scheduleId") ?: return@composable
@@ -238,12 +240,10 @@ fun NavigationGraph(
 
         composable(Screen.ManualSchedule.route) { backStackEntry ->
             ManualScheduleScreen(
-                // ✅ 移除 orgId, groupId, month 的傳遞
                 onBackClick = { navController.popBackStack() },
                 onSaveSuccess = { navController.popBackStack() }
             )
         }
-        // ✅ 新增這個 composable 區塊
         composable(Screen.SchedulingRules.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
@@ -253,21 +253,8 @@ fun NavigationGraph(
                 onBackClick = { navController.popBackStack() }
             )
         }
-        // <-- 3. 新增 UserProfileScreen 的 composable 區塊
         composable(Screen.UserProfile.route) {
             UserProfileScreen(
-                onBackClick = { navController.popBackStack() }
-            )
-        }
-        // 新增 composable
-        composable(Screen.QRScanner.route) {
-            QRScannerScreen(
-                onCodeScanned = { code ->
-                    navController.previousBackStackEntry
-                        ?.savedStateHandle
-                        ?.set("scanned_code", code)
-                    navController.popBackStack()
-                },
                 onBackClick = { navController.popBackStack() }
             )
         }

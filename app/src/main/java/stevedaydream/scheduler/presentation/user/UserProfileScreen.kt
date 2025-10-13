@@ -129,7 +129,10 @@ fun UserProfileScreen(
                             onCancelRequestClick = { request ->
                                 viewModel.cancelGroupJoinRequest(request)
                             },
-                            onLeaveOrgClick = { orgToLeave = orgInfo.organization }
+                            onLeaveOrgClick = {
+                                // 改為觸發新的 ViewModel 流程
+                                viewModel.onLeaveOrganizationClicked(orgInfo.organization)
+                            }
                         )
                         // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     }
@@ -150,9 +153,19 @@ fun UserProfileScreen(
             onDismiss = { orgToLeave = null }
         )
     }
+    uiState.successorSelectionState?.let { state ->
+        SuccessorSelectionDialog(
+            state = state,
+            onConfirm = { newOwnerId ->
+                viewModel.transferOwnershipAndLeave(state.org.id, newOwnerId)
+            },
+            onDismiss = { viewModel.cancelOwnerLeaveFlow() }
+        )
+    }
 }
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+
+
 @Composable
 private fun OrganizationAndGroupCard(
     orgInfo: UserOrganizationInfo,
@@ -240,7 +253,6 @@ private fun OrganizationAndGroupCard(
     }
 }
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 @Composable
 private fun GroupListItem(
     group: Group,
@@ -299,7 +311,7 @@ private fun GroupListItem(
         }
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 @Composable
@@ -417,4 +429,85 @@ private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = value, style = MaterialTheme.typography.bodyMedium)
     }
+}
+@Composable
+private fun SuccessorSelectionDialog(
+    state: SuccessorSelectionState,
+    onConfirm: (newOwnerId: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedUserId by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+        title = { Text("轉移組織擁有權") },
+        text = {
+            Column {
+                Text(
+                    "您是「${state.org.displayName}」的擁有者，退出前必須轉移權限。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(16.dp))
+
+                if (state.isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                } else {
+                    Text("請選擇一位繼任者：", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(8.dp))
+
+                    // 自動選擇選項
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedUserId = state.candidates.first().id }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedUserId == state.candidates.first().id,
+                            onClick = { selectedUserId = state.candidates.first().id }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("自動選擇最早加入的成員\n(${state.candidates.first().name})")
+                    }
+
+                    Divider(Modifier.padding(vertical = 8.dp))
+
+                    // 手動選擇列表
+                    LazyColumn {
+                        items(state.candidates) { user ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedUserId = user.id }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedUserId == user.id,
+                                    onClick = { selectedUserId = user.id }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(user.name)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { selectedUserId?.let { onConfirm(it) } },
+                enabled = selectedUserId != null && !state.isLoading
+            ) {
+                Text("確認轉移並退出")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }

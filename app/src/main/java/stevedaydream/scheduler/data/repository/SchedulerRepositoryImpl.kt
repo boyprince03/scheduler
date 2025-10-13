@@ -52,7 +52,13 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit> {
         return remoteDataSource.deactivateInvite(orgId, inviteId)
     }
+    override suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit> {
+        return remoteDataSource.scheduleOrganizationForDeletion(orgId)
+    }
 
+    override suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit> {
+        return remoteDataSource.transferOwnership(orgId, newOwnerId)
+    }
     override suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> {
         return remoteDataSource.leaveOrganization(orgId, userId)
     }

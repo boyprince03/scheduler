@@ -26,7 +26,8 @@ data class Organization(
     val createdAt: Date = Date(),
     val requireApproval: Boolean = true,
     @get:PropertyName("isActive") val isActive: Boolean = true,
-    @Embedded val features: Features = Features()
+    @Embedded val features: Features = Features(),
+    val deletionScheduledAt: Date? = null // 用於軟刪除
 ) {
     fun toFirestoreMap(): Map<String, Any?> {
         return mapOf(
@@ -44,7 +45,8 @@ data class Organization(
                 "advanced_rules" to features.advancedRules,
                 "excel_export" to features.excelExport,
                 "api_access" to features.apiAccess
-            )
+            ),
+            "deletionScheduledAt" to deletionScheduledAt
         )
     }
 }

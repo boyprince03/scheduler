@@ -22,7 +22,10 @@ fun GroupListScreen(
     viewModel: GroupListViewModel = hiltViewModel(),
     onGroupClick: (String) -> Unit,
     onBackClick: () -> Unit,
-    onNavigateToInviteManagement: (String) -> Unit // <-- 新增導航參數
+    onNavigateToInviteManagement: (String) -> Unit,
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    onNavigateToMemberList: (String) -> Unit
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
     val groups by viewModel.groups.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -41,6 +44,11 @@ fun GroupListScreen(
                     }
                 },
                 actions = {
+                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                    IconButton(onClick = { onNavigateToMemberList(orgId) }) {
+                        Icon(Icons.Default.ManageAccounts, contentDescription = "管理成員")
+                    }
+                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                     IconButton(onClick = { onNavigateToInviteManagement(orgId) }) {
                         Icon(Icons.Default.GroupAdd, contentDescription = "邀請成員")
                     }

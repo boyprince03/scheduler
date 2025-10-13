@@ -20,22 +20,29 @@ data class UserOrganizationInfo(
     val isMember: Boolean = true
 )
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 (確保此資料類別存在於檔案頂部) ▼▼▼▼▼▼▼▼▼▼▼▼
+data class SuccessorSelectionState(
+    val org: Organization,
+    val candidates: List<User> = emptyList(),
+    val isLoading: Boolean = true
+)
+
 data class UserProfileUiState(
     val isLoading: Boolean = true,
     val currentUser: User? = null,
     val organizationsInfo: List<UserOrganizationInfo> = emptyList(),
     val pendingGroupRequests: List<GroupJoinRequest> = emptyList(),
-    val updatingGroupRequests: Set<String> = emptySet(), // 新增：追蹤正在處理的群組 ID
+    val updatingGroupRequests: Set<String> = emptySet(),
     val requestResult: Result<Unit>? = null,
     val isEditing: Boolean = false,
     val isSaving: Boolean = false,
     val nameInput: String = "",
     val employeeIdInput: String = "",
     val saveResult: Result<Unit>? = null,
-    val leaveOrgResult: Result<Unit>? = null
+    val leaveOrgResult: Result<Unit>? = null,
+    val successorSelectionState: SuccessorSelectionState? = null
 )
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 @HiltViewModel
 class UserProfileViewModel @Inject constructor(
@@ -100,12 +107,11 @@ class UserProfileViewModel @Inject constructor(
         }
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+
     fun sendGroupJoinRequest(targetOrgId: String, targetGroup: Group) {
         val currentUser = _uiState.value.currentUser ?: return
 
         viewModelScope.launch {
-            // 1. 設置載入狀態
             _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests + targetGroup.id) }
 
             val request = GroupJoinRequest(
@@ -120,10 +126,8 @@ class UserProfileViewModel @Inject constructor(
 
             try {
                 val result = repository.createGroupJoinRequest(targetOrgId, request)
-                // 2. 處理結果，主要用於顯示 Toast
                 _uiState.update { it.copy(requestResult = result.map { }) }
             } finally {
-                // 3. 無論成功或失敗，都移除載入狀態
                 _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests - targetGroup.id) }
             }
         }
@@ -131,24 +135,65 @@ class UserProfileViewModel @Inject constructor(
 
     fun cancelGroupJoinRequest(request: GroupJoinRequest) {
         viewModelScope.launch {
-            // 1. 設置載入狀態
             _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests + request.targetGroupId) }
 
             try {
-                // 2. 執行背景操作
                 repository.cancelGroupJoinRequest(request.orgId, request.id)
-                // 成功後 Firestore listener 會自動更新 UI
             } catch (e: Exception) {
-                // (可選) 處理錯誤，例如顯示 Toast
+                // Handle error
             }
             finally {
-                // 3. 移除載入狀態
                 _uiState.update { it.copy(updatingGroupRequests = it.updatingGroupRequests - request.targetGroupId) }
             }
         }
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
+    fun onLeaveOrganizationClicked(org: Organization) {
+        val userId = auth.currentUser?.uid ?: return
+
+        viewModelScope.launch {
+            if (userId == org.ownerId) {
+                _uiState.update { it.copy(successorSelectionState = SuccessorSelectionState(org = org)) }
+
+                val allUsers = repository.observeUsers(org.id).firstOrNull() ?: emptyList()
+                val otherMembers = allUsers.filter { it.id != userId }
+
+                if (otherMembers.isEmpty()) {
+                    repository.scheduleOrganizationForDeletion(org.id)
+                    repository.leaveOrganization(org.id, userId)
+                    _uiState.update { it.copy(successorSelectionState = null, leaveOrgResult = Result.success(Unit)) }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            successorSelectionState = it.successorSelectionState?.copy(
+                                candidates = otherMembers.sortedBy { m -> m.joinedAt },
+                                isLoading = false
+                            )
+                        )
+                    }
+                }
+            } else {
+                leaveOrganization(org.id)
+            }
+        }
+    }
+
+    fun transferOwnershipAndLeave(orgId: String, newOwnerId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            val transferResult = repository.transferOwnership(orgId, newOwnerId)
+            if (transferResult.isSuccess) {
+                val leaveResult = repository.leaveOrganization(orgId, userId)
+                _uiState.update { it.copy(successorSelectionState = null, leaveOrgResult = leaveResult) }
+            } else {
+                _uiState.update { it.copy(leaveOrgResult = Result.failure(transferResult.exceptionOrNull() ?: Exception("權限轉移失敗"))) }
+            }
+        }
+    }
+
+    fun cancelOwnerLeaveFlow() {
+        _uiState.update { it.copy(successorSelectionState = null) }
+    }
     fun leaveOrganization(orgId: String) {
         val userId = auth.currentUser?.uid ?: return
         viewModelScope.launch {
