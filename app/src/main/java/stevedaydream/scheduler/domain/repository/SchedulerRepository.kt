@@ -106,15 +106,16 @@ interface SchedulerRepository {
     suspend fun createScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<String>
     fun observeSchedules(orgId: String, groupId: String): Flow<List<Schedule>>
     fun observeSchedule(scheduleId: String): Flow<Schedule?>
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit>
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+    suspend fun deleteSchedule(orgId: String, scheduleId: String): Result<Unit>
+
 
     // ==================== 班表分配 ====================
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String>
     fun observeAssignments(orgId: String, scheduleId: String): Flow<List<Assignment>>
     // ==================== 人力規劃 ====================
     fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?>
+    suspend fun getManpowerPlanOnce(orgId: String, groupId: String, month: String): ManpowerPlan? // ✅ 新增此行
     suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit>
     // ==================== 超級管理員 ====================
     suspend fun createTestData(orgName: String, ownerId: String, testMemberEmail: String): Result<Unit>

@@ -12,11 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.data.model.Schedule
 import stevedaydream.scheduler.util.DateUtils
+import stevedaydream.scheduler.util.showToast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +39,8 @@ fun ScheduleScreen(
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var selectedMonth by remember { mutableStateOf(DateUtils.getCurrentMonthString()) }
+    var scheduleToDelete by remember { mutableStateOf<Schedule?>(null) }
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.generateSuccess.collect {
@@ -172,6 +176,9 @@ fun ScheduleScreen(
                 schedules = schedules,
                 onScheduleClick = { schedule ->
                     onNavigateToScheduleDetail(viewModel.currentOrgId, viewModel.currentGroupId, schedule.id)
+                },
+                onDeleteClick = { schedule ->
+                    scheduleToDelete = schedule
                 }
             )
         }
@@ -187,13 +194,29 @@ fun ScheduleScreen(
             }
         )
     }
+    // ✅ 顯示刪除確認對話框
+    scheduleToDelete?.let { schedule ->
+        stevedaydream.scheduler.presentation.common.ConfirmDialog(
+            title = "確認刪除",
+            message = "您確定要刪除 ${DateUtils.getDisplayMonth(schedule.month)} 的班表草稿嗎？此操作無法復原。",
+            onConfirm = {
+                viewModel.deleteSchedule(schedule.id)
+                scheduleToDelete = null // 關閉對話框
+                context.showToast("班表已刪除")
+            },
+            onDismiss = {
+                scheduleToDelete = null // 關閉對話框
+            }
+        )
+    }
 }
 
 
 @Composable
 fun ScheduleListSection(
     schedules: List<Schedule>,
-    onScheduleClick: (Schedule) -> Unit
+    onScheduleClick: (Schedule) -> Unit,
+    onDeleteClick: (Schedule) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -252,7 +275,8 @@ fun ScheduleListSection(
                     schedules.forEach { schedule ->
                         ScheduleCard(
                             schedule = schedule,
-                            onClick = { onScheduleClick(schedule) }
+                            onClick = { onScheduleClick(schedule) },
+                            onDeleteClick = { onDeleteClick(schedule) }
                         )
                     }
                 }
@@ -265,7 +289,8 @@ fun ScheduleListSection(
 @Composable
 fun ScheduleCard(
     schedule: Schedule,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -365,9 +390,36 @@ fun ScheduleCard(
 
             Icon(
                 imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
+                contentDescription = "查看詳情",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        Spacer(Modifier.height(8.dp))
+        Divider()
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // ✅ 顯示流水號和生成時間
+            Text(
+                text = "ID: ${schedule.id.take(8).uppercase()}  ·  ${DateUtils.timestampToDateString(schedule.generatedAt.time)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // ✅ 僅在草稿狀態下顯示刪除按鈕
+            if (schedule.status == "draft") {
+                IconButton(onClick = onDeleteClick) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "刪除草稿",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
     }
 }

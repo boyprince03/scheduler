@@ -126,15 +126,14 @@ class ScheduleViewModel @Inject constructor(
         }
     }
 
-    // ✅ ===== 修正點 =====
     fun generateSmartSchedule(month: String) {
         viewModelScope.launch {
             _isGenerating.value = true
             try {
-                // 從 repository 取得該月份的人力規劃資料
-                val manpowerPlan = repository.observeManpowerPlan(currentOrgId, currentGroupId, month).firstOrNull()
+                // ✅ 修改點：改為呼叫新的一次性讀取函式，並加上 await()
+                val manpowerPlan = repository.getManpowerPlanOnce(currentOrgId, currentGroupId, month)
 
-                // 1. ScheduleGenerator 產生 Schedule 和 Assignments 物件 (此部分不變)
+                // 後續的排班邏輯保持不變
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
@@ -143,23 +142,30 @@ class ScheduleViewModel @Inject constructor(
                     shiftTypes = _shiftTypes.value,
                     requests = _requests.value,
                     rules = _rules.value.filter { it.isEnabled },
-                    manpowerPlan = manpowerPlan
+                    manpowerPlan = manpowerPlan // 將讀取到的 manpowerPlan 傳入
                 )
 
-                // 2. 使用新的原子操作函式，一次性寫入所有資料
                 repository.createScheduleAndAssignments(
                     orgId = currentOrgId,
                     schedule = result.schedule,
                     assignments = result.assignments
-                ).getOrThrow() // 如果批次寫入失敗，直接拋出例外
+                ).getOrThrow()
 
                 _generateSuccess.emit(Unit)
             } catch (e: Exception) {
                 println("❌ [ScheduleVM] 智慧排班生成或儲存失敗: ${e.message}")
-                // 未來可以在此處更新 UI State 來向使用者顯示錯誤訊息
             } finally {
                 _isGenerating.value = false
             }
+        }
+    }
+    fun deleteSchedule(scheduleId: String) {
+        viewModelScope.launch {
+            repository.deleteSchedule(currentOrgId, scheduleId)
+                .onFailure {
+                    // 可在此處處理刪除失敗的 UI 提示
+                    println("❌ 刪除班表失敗: ${it.message}")
+                }
         }
     }
 }

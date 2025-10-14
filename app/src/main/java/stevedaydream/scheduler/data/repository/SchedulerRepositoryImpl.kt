@@ -436,6 +436,7 @@ class SchedulerRepositoryImpl @Inject constructor(
     override suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> {
         return remoteDataSource.createSchedule(orgId, schedule)
     }
+
     override suspend fun createScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<String> {
         return remoteDataSource.createScheduleAndAssignments(orgId, schedule, assignments)
     }
@@ -455,11 +456,19 @@ class SchedulerRepositoryImpl @Inject constructor(
         return database.scheduleDao().getSchedule(scheduleId)
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> {
         return remoteDataSource.updateScheduleAndAssignments(orgId, schedule, assignments)
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
+    override suspend fun deleteSchedule(orgId: String, scheduleId: String): Result<Unit> {
+        // 同時操作遠端和本地資料庫以保持同步
+        return remoteDataSource.deleteScheduleAndAssignments(orgId, scheduleId).onSuccess {
+            // 遠端成功後，刪除本地快取
+            database.assignmentDao().deleteAssignmentsBySchedule(scheduleId)
+            // 這一步驟需要你在 ScheduleDao 新增 deleteScheduleById 函式 (下一步驟)
+             database.scheduleDao().deleteScheduleById(scheduleId)
+        }
+    }
 
     // ==================== 班表分配 ====================
     override suspend fun createAssignment(
@@ -483,6 +492,7 @@ class SchedulerRepositoryImpl @Inject constructor(
         // UI 層永遠從本地資料庫讀取，確保了單一資料來源
         return database.assignmentDao().getAssignmentsBySchedule(scheduleId)
     }
+
     // ==================== 人力規劃 ====================
     override fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?> {
         val planId = "${orgId}_${groupId}_${month}"
@@ -495,9 +505,15 @@ class SchedulerRepositoryImpl @Inject constructor(
         return database.manpowerPlanDao().getPlan(planId)
     }
 
+    override suspend fun getManpowerPlanOnce(orgId: String, groupId: String, month: String): ManpowerPlan? {
+        // 直接從遠端獲取一次性資料，不透過本地快取
+        return remoteDataSource.getManpowerPlanOnce(orgId, groupId, month)
+    }
+
     override suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit> {
         return remoteDataSource.saveManpowerPlan(orgId, plan)
     }
+
     // ==================== 超級管理員 ====================
     override suspend fun createTestData(orgName: String, ownerId: String, testMemberEmail: String): Result<Unit> {
         // 呼叫 TestDataGenerator 來產生完整的資料集

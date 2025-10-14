@@ -879,7 +879,21 @@ class FirebaseDataSource @Inject constructor(
         // 回傳建立成功的 scheduleId
         schedule.id
     }
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    //刪除班表
+    suspend fun deleteScheduleAndAssignments(orgId: String, scheduleId: String): Result<Unit> = runCatching {
+        val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(scheduleId)
+        val assignmentsQuery = scheduleRef.collection("assignments").get().await()
+
+        firestore.runBatch { batch ->
+            // 1. 刪除所有子集合中的 assignment 文件
+            for (document in assignmentsQuery.documents) {
+                batch.delete(document.reference)
+            }
+            // 2. 刪除 schedule 文件本身
+            batch.delete(scheduleRef)
+        }.await()
+    }
+
     suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> = runCatching {
         val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)
 
@@ -928,6 +942,15 @@ class FirebaseDataSource @Inject constructor(
             .document(plan.id)
             .set(plan.toFirestoreMap())
             .await()
+    }
+
+    suspend fun getManpowerPlanOnce(orgId: String, groupId: String, month: String): ManpowerPlan? {
+        val planId = "${orgId}_${groupId}_${month}"
+        val snapshot = firestore.collection("organizations/$orgId/manpowerPlans")
+            .document(planId)
+            .get()
+            .await()
+        return snapshot.toObject(ManpowerPlan::class.java)
     }
 
     fun observeAdminStatus(userId: String): Flow<Boolean> {

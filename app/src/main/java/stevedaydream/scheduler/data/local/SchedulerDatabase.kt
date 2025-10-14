@@ -212,6 +212,8 @@ interface ScheduleDao {
 
     @Query("DELETE FROM schedules WHERE orgId = :orgId AND groupId = :groupId")
     suspend fun deleteSchedulesByGroup(orgId: String, groupId: String)
+    @Query("DELETE FROM schedules WHERE id = :scheduleId")
+    suspend fun deleteScheduleById(scheduleId: String)
 }
 
 @Dao
