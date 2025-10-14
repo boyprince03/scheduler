@@ -7,6 +7,10 @@ plugins {
     kotlin("plugin.serialization") version "1.9.20"
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "stevedaydream.scheduler"
     compileSdk = 34
@@ -32,6 +36,9 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {
@@ -74,10 +81,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-    implementation("androidx.compose.material:material:1.6.8") // 撰寫時的穩定版本
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")
@@ -112,6 +119,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
+    // Timber for logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
     // Accompanist (系統UI控制)
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.32.0")
 
@@ -127,9 +137,6 @@ dependencies {
     // ZXing - QR Code 掃描與生成
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-
-    // Accompanist - 權限處理
-    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
 
     // FileProvider (通常已包含在 androidx.core 中)
     implementation("androidx.core:core-ktx:1.12.0")

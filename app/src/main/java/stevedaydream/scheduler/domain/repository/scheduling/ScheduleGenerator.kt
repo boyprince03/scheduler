@@ -1,7 +1,9 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
 import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule
+import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
 import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
 import stevedaydream.scheduler.util.DateUtils
 import java.util.*
@@ -20,13 +22,10 @@ class ScheduleGenerator {
         val violations: List<String>
     )
 
-    private val PENALTY_CONSECUTIVE_WORK = 50
-    private val PENALTY_NO_WEEKLY_REST = 200
-    private val BONUS_SHIFT_PREFERENCE = 10
     private val allAvailableRules = listOf(
         MaxConsecutiveWorkDaysRule(),
-        MinRestBetweenShiftsRule()
-        // ... 在這裡加入更多規則
+        MinRestBetweenShiftsRule(),
+        NightShiftFollowupRule()
     )
     private val ruleEngine = RuleEngine(allAvailableRules)
 
@@ -38,95 +37,68 @@ class ScheduleGenerator {
         shiftTypes: List<ShiftType>,
         requests: List<Request>,
         rules: List<SchedulingRule>,
-        manpowerPlan: ManpowerPlan? // 接收人力規劃作為參數
+        manpowerPlan: ManpowerPlan? // 雖然此次未使用，但保留參數以備未來擴充
     ): ScheduleGenerationResult {
         val dates = DateUtils.getDatesInMonth(month)
         var totalScore = 0
 
-        val workShifts = shiftTypes.filter { it.shortCode != "OFF" }
+        // 找出關鍵班別的 ID
         val offShift = shiftTypes.find { it.shortCode == "OFF" }
-        if (offShift == null) {
+        val dayDutyShift = shiftTypes.find { it.name == "值班(日)" }
+        val nightDutyShift = shiftTypes.find { it.name == "值班(夜)" }
+
+        // 確保關鍵班別存在
+        if (offShift == null || dayDutyShift == null || nightDutyShift == null) {
             return ScheduleGenerationResult(
                 schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"),
                 assignments = emptyList(),
                 score = -9999,
-                violations = listOf("關鍵錯誤：找不到代號為 'OFF' 的休假班別。")
+                violations = listOf("關鍵錯誤：找不到 'OFF', '值班(日)' 或 '值班(夜)' 的班別。")
             )
         }
 
-        // ✅ 修正點 1: 確保 userAssignments 變數被正確定義
+        // 初始化每個使用者的空班表
         val userAssignments = users.associate { user ->
             user.id to mutableMapOf<String, String>()
         }.toMutableMap()
 
-        // 1. 優先處理已批准的休假申請 (高優先級)
+        // 1. 優先處理已批准的休假申請
         requests.filter { it.status == "approved" && it.type == "leave" }
             .forEach { request ->
                 val day = request.date.split("-").last()
                 userAssignments[request.userId]?.set(day, offShift.id)
             }
 
-        // 建立請求查詢表以提高效率
-        val requestMap = requests.filter { it.status == "approved" && it.type == "shift_preference" }
-            .associateBy { "${it.userId}-${it.date}" }
-
-        // 2. 為每一天分配班次
+        // 2. 以「日」為單位，強制填滿 D 班和 N 班
         dates.forEach { date ->
             val day = date.split("-").last()
-            val dailyPlan = manpowerPlan?.dailyRequirements?.get(day)
 
-            // 2a. (新邏輯) 優先滿足當天的最低人力需求
-            dailyPlan?.requirements?.forEach { (shiftTypeId, requiredCount) ->
-                // 找出當天還沒被排任何班(包括休假)的員工
-                val availableUsers = users.shuffled().filter { user ->
-                    userAssignments[user.id]?.get(day) == null
-                }
-
-                // 指派 `requiredCount` 位員工到 `shiftTypeId` 班別
-                availableUsers.take(requiredCount).forEach { user ->
-                    userAssignments[user.id]?.set(day, shiftTypeId)
-                }
-            }
-
-            // 2b. (舊邏輯，調整後) 為當天剩餘的員工分配班次
-            val usersToAssign = users.filter { user ->
+            // 找出當天可以排班的人 (尚未被排休假的人)
+            val availableUsers = users.filter { user ->
                 userAssignments[user.id]?.get(day) == null
+            }.shuffled().toMutableList()
+
+            // 如果當天可排班人數不足 2 人，無法滿足 D/N 班需求，記錄錯誤並跳到下一天
+            if (availableUsers.size < 2) {
+                // (可選) 在此處可以加入違規記錄，表示當天人力不足
+                return@forEach
             }
 
-            // 為每位員工找到最佳班次
-            usersToAssign.forEach { user ->
-                // 計算當天可休假人數上限
-                val totalRequired = dailyPlan?.requirements?.values?.sum() ?: 0
-                val maxLeaveSlots = (users.size - totalRequired).coerceAtLeast(0)
-                val currentLeaveCount = userAssignments.values.count { it[day] == offShift.id }
+            // 隨機指派一人上 D 班
+            val dayDutyUser = availableUsers.removeAt(0)
+            userAssignments[dayDutyUser.id]?.set(day, dayDutyShift.id)
 
-                val availableShifts = if (currentLeaveCount < maxLeaveSlots) {
-                    // 如果還可以休假，則休假班別也納入考慮
-                    shiftTypes
-                } else {
-                    // 否則只考慮上班的班別
-                    workShifts
-                }
+            // 隨機指派一人上 N 班
+            val nightDutyUser = availableUsers.removeAt(0)
+            userAssignments[nightDutyUser.id]?.set(day, nightDutyShift.id)
 
-                val bestShift = availableShifts.maxByOrNull { shift ->
-                    var score = 0
-                    // 檢查班次偏好
-                    val requestKey = "${user.id}-${date}"
-                    requestMap[requestKey]?.let { request ->
-                        if (request.details["shiftId"] == shift.id) {
-                            score += BONUS_SHIFT_PREFERENCE
-                        }
-                    }
-                    // 增加隨機性以避免每次結果都一樣
-                    score += Random.nextInt(5)
-                    score
-                } ?: workShifts.randomOrNull() ?: offShift // 如果沒有最佳選擇，隨機選一個工作班別，再不行就休假
-
-                userAssignments[user.id]?.set(day, bestShift.id)
+            // 3. 剩下的人全部排休
+            availableUsers.forEach { remainingUser ->
+                userAssignments[remainingUser.id]?.set(day, offShift.id)
             }
         }
 
-        // 3. 檢查規則違反與計分
+        // 4. 對最終生成的完整班表，進行事後規則檢查與計分
         val enabledDbRules = rules.filter { it.isEnabled }
         val allViolations = mutableListOf<String>()
 
@@ -135,7 +107,7 @@ class ScheduleGenerator {
                 scheduleId = "temp",
                 userId = user.id,
                 userName = user.name,
-                dailyShifts = userAssignments[user.id]!!
+                dailyShifts = userAssignments[user.id] ?: emptyMap()
             )
         }
 
@@ -151,7 +123,7 @@ class ScheduleGenerator {
             }
         }
 
-        // 4. 建立最終的 Schedule 和 Assignment 物件
+        // 5. 建立最終的 Schedule 和 Assignment 物件
         val finalSchedule = Schedule(
             id = UUID.randomUUID().toString(),
             orgId = orgId,
@@ -160,7 +132,8 @@ class ScheduleGenerator {
             status = "draft",
             generatedAt = Date(),
             totalScore = totalScore,
-            violatedRules = allViolations
+            violatedRules = allViolations,
+            generationMethod = "smart"
         )
 
         val finalAssignments = userAssignmentObjects.map {
@@ -170,3 +143,4 @@ class ScheduleGenerator {
         return ScheduleGenerationResult(finalSchedule, finalAssignments, totalScore, allViolations)
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

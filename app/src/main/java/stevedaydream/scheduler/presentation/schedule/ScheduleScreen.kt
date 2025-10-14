@@ -1,13 +1,11 @@
-// scheduler/presentation/schedule/ScheduleScreen.kt
 package stevedaydream.scheduler.presentation.schedule
 
+import android.R.attr.text
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,13 +50,14 @@ fun ScheduleScreen(
                 title = { Text(group?.groupName ?: "排班") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (isScheduler) {
                         IconButton(onClick = { viewModel.releaseScheduler() }) {
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權")
+                            Icon(Icons.Filled.ExitToApp, contentDescription = "釋放排班權")
+
                         }
                     }
                 }
@@ -262,7 +261,7 @@ fun ScheduleListSection(
     }
 }
 
-// ✅ 新增排班表卡片組件
+// 排班表卡片組件
 @Composable
 fun ScheduleCard(
     schedule: Schedule,
@@ -373,8 +372,8 @@ fun ScheduleCard(
     }
 }
 
-// 🔼🔼🔼 到此為止 🔼🔼🔼
-// ✅ 新增月份選擇對話框
+
+// 月份選擇對話框
 @Composable
 fun MonthPickerDialog(
     currentMonth: String,
@@ -424,8 +423,6 @@ fun MonthPickerDialog(
     )
 }
 
-// 🔼🔼🔼 到此為止 🔼🔼🔼
-
 @Composable
 fun SchedulerStatusCard(
     group: stevedaydream.scheduler.data.model.Group,
@@ -433,6 +430,34 @@ fun SchedulerStatusCard(
     isScheduler: Boolean,
     onClaimClick: () -> Unit
 ) {
+    // 狀態：用來存放格式化後的剩餘時間字串
+    var remainingTime by remember { mutableStateOf("") }
+
+    // 當 isScheduler 為 true 且 group 物件的到期時間改變時，啟動或重啟此計時器
+    if (isScheduler) {
+        LaunchedEffect(key1 = group.schedulerLeaseExpiresAt) {
+            val expiresAt = group.schedulerLeaseExpiresAt?.time ?: 0L
+            // 只要還沒到期，就持續更新
+            while (System.currentTimeMillis() < expiresAt) {
+                val remainingMillis = expiresAt - System.currentTimeMillis()
+                if (remainingMillis <= 0) break // 時間到就跳出迴圈
+
+                // 計算剩餘的分鐘和秒數
+                val minutes = remainingMillis / 60000
+                val seconds = (remainingMillis % 60000) / 1000
+
+                // 格式化字串，例如："剩下 01:59"
+                remainingTime = String.format("剩下 %02d:%02d", minutes, seconds)
+
+                // 每秒更新一次
+                kotlinx.coroutines.delay(1000)
+            }
+            // 迴圈結束後，顯示租約已到期
+            remainingTime = "租約已到期"
+        }
+    }
+
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -454,16 +479,28 @@ fun SchedulerStatusCard(
 
             when {
                 isScheduler -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text("你正在排班中")
+                    // 將原本的 Row 改為 Column，以便垂直排列文字
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text("你正在排班中", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        }
+                        // 顯示剩餘時間
+                        if (remainingTime.isNotEmpty()) {
+                            Text(
+                                text = remainingTime,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(start = 32.dp) // 對齊上方圖示
+                            )
+                        }
                     }
                 }
                 group.isSchedulerActive() -> {

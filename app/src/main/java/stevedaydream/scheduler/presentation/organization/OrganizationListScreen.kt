@@ -1,27 +1,18 @@
-// scheduler/presentation/organization/OrganizationListScreen.kt
 package stevedaydream.scheduler.presentation.organization
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.AssignmentInd
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.pullrefresh.PullRefreshIndicator
-import androidx.compose.material.pullrefresh.pullRefresh
-import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -29,13 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.presentation.navigation.Screen
 import stevedaydream.scheduler.util.showToast
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-import stevedaydream.scheduler.presentation.organization.OrganizationWithMemberCount
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrganizationListScreen(
     navController: NavHostController,
@@ -51,7 +39,18 @@ fun OrganizationListScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    val pullRefreshState = rememberPullRefreshState(isRefreshing, { viewModel.refresh() })
+    val pullToRefreshState = rememberPullToRefreshState()
+    if (pullToRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            viewModel.refresh()
+        }
+    }
+
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) {
+            pullToRefreshState.endRefresh()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.logoutEvent.collect {
@@ -153,7 +152,7 @@ fun OrganizationListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .pullRefresh(pullRefreshState)
+                .nestedScroll(pullToRefreshState.nestedScrollConnection)
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -195,9 +194,8 @@ fun OrganizationListScreen(
                 }
             }
 
-            PullRefreshIndicator(
-                refreshing = isRefreshing,
-                state = pullRefreshState,
+            PullToRefreshContainer(
+                state = pullToRefreshState,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
@@ -324,4 +322,3 @@ fun CreateOrganizationDialog(
         }
     )
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

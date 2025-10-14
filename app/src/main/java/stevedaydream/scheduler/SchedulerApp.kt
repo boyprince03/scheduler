@@ -2,6 +2,16 @@ package stevedaydream.scheduler
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import stevedaydream.scheduler.BuildConfig
+import timber.log.Timber
 
 @HiltAndroidApp
-class SchedulerApp : Application()
+class SchedulerApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
+    }
+}

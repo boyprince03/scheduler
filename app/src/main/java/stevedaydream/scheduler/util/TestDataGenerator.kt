@@ -1,8 +1,47 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.util
 
 import stevedaydream.scheduler.data.model.*
 import java.util.*
 import kotlin.math.absoluteValue
+
+/**
+ * 提供一組預設的「醫院-專科護理師」排班規則模板
+ * @return 一個包含三條硬性規則的列表
+ */
+private fun getHospitalNursePractitionerRules(): List<SchedulingRule> {
+    return listOf(
+        SchedulingRule(
+            id = "template-hnp-consecutive-work-6",
+            ruleName = "連續上班不超過N天",
+            description = "每人當月不可連續上班超過6天。",
+            ruleType = "hard",
+            penaltyScore = -1000,
+            isEnabled = true,
+            isTemplate = true,
+            parameters = mapOf("maxDays" to "6")
+        ),
+        SchedulingRule(
+            id = "template-hnp-night-shift-followup",
+            ruleName = "夜班後續班別限制",
+            description = "值班(夜)後面只能是值班(夜)或OFF。",
+            ruleType = "hard",
+            penaltyScore = -1000,
+            isEnabled = true,
+            isTemplate = true
+        ),
+        SchedulingRule(
+            id = "template-hnp-min-rest-12h",
+            ruleName = "輪班間隔需大於N小時",
+            description = "每個班別中間至少要間隔12小時。",
+            ruleType = "hard",
+            penaltyScore = -1000,
+            isEnabled = true,
+            isTemplate = true,
+            parameters = mapOf("minHours" to "12")
+        )
+    )
+}
 
 /**
  * 測試資料產生器 (已更新)
@@ -139,25 +178,6 @@ object TestDataGenerator {
     }
 
     /**
-     * 產生測試排班規則
-     */
-    fun generateSchedulingRules(orgId: String): List<SchedulingRule> {
-        return listOf(
-            SchedulingRule(
-                id = "rule-consecutive-work", orgId = orgId, ruleName = "連續上班不超過N天",
-                description = "避免員工因連續工作過多天而過勞。", ruleType = "soft", penaltyScore = -50,
-                isEnabled = true, parameters = mapOf("maxDays" to "6")
-            ),
-            SchedulingRule(
-                id = "rule-rest-between-shifts", orgId = orgId, ruleName = "輪班間隔需大於N小時",
-                description = "確保員工在兩次輪班之間有足夠的休息時間。", ruleType = "hard", penaltyScore = -1000,
-                isEnabled = true, parameters = mapOf("minHours" to "11")
-            )
-        )
-    }
-
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-    /**
      * 為指定的群組和使用者產生一份連貫的班表和班表分配資料
      */
     private fun generateConsistentScheduleForGroup(
@@ -230,7 +250,6 @@ object TestDataGenerator {
 
         return schedule to finalAssignments
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     /**
      * 完整的測試資料集
@@ -259,7 +278,6 @@ object TestDataGenerator {
         var users = generateUsers(org.id)
         var groups = generateGroups(org.id, users.map { it.id })
 
-        // 如果提供了測試成員 Email，則建立並加入
         if (testMemberEmail.isNotBlank()) {
             val testMemberId = "test-member-${UUID.randomUUID().toString().take(8)}"
             val testMember = User(
@@ -273,7 +291,6 @@ object TestDataGenerator {
                 employmentStatus = mapOf(org.id to "active")
             )
             users = users + testMember
-            // 將測試成員加入第一個群組
             groups = groups.mapIndexed { index, group ->
                 if (index == 0) group.copy(memberIds = group.memberIds + testMemberId) else group
             }
@@ -281,17 +298,15 @@ object TestDataGenerator {
 
         val shiftTypes = generateShiftTypes(org.id)
         val requests = generateRequests(org.id, users)
-        val rules = generateSchedulingRules(org.id)
+        // ✅ 直接呼叫新的函式來取得醫院規則模板
+        val rules = getHospitalNursePractitionerRules()
 
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-        // 使用新方法產生連貫的班表和分配資料
         val schedulesAndAssignments = groups.map { group ->
             val groupUsers = users.filter { it.id in group.memberIds }
             generateConsistentScheduleForGroup(org.id, group, groupUsers)
         }
         val schedules = schedulesAndAssignments.map { it.first }
         val assignments = schedulesAndAssignments.flatMap { it.second }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
         return TestDataSet(
             organization = org,
@@ -299,9 +314,10 @@ object TestDataGenerator {
             groups = groups,
             shiftTypes = shiftTypes,
             requests = requests,
-            rules = rules,
+            rules = rules, // ✅ 使用新的規則列表
             schedules = schedules,
             assignments = assignments
         )
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

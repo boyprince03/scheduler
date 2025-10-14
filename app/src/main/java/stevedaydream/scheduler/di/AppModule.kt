@@ -54,7 +54,8 @@ object AppModule {
             SchedulerDatabase::class.java,
             "scheduler_database"
         )
-            .fallbackToDestructiveMigration()
+            // .fallbackToDestructiveMigration() // This is unsafe for production.
+            // TODO: Add real migration strategies here.
             .build()
     }
 

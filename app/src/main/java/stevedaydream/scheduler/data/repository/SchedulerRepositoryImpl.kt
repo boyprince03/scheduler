@@ -11,6 +11,7 @@ import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.data.remote.FirebaseDataSource
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.util.TestDataGenerator
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -189,12 +190,12 @@ class SchedulerRepositoryImpl @Inject constructor(
                 remoteDataSource.observeUserFromTopLevel(userId)
                     .collect { remoteUser ->
                         remoteUser?.let {
-                            println("🔄 [Repo] 從 Firestore 同步用戶資料: ${it.name}")
+                            Timber.d("從 Firestore 同步用戶資料: %s", it.name)
                             database.userDao().insertUser(it)
                         }
                     }
             } catch (e: Exception) {
-                println("❌ [Repo] Firestore 同步失敗: ${e.message}")
+                Timber.e(e, "Firestore 同步失敗")
             }
         }
 
@@ -203,7 +204,7 @@ class SchedulerRepositoryImpl @Inject constructor(
         val adminStatusFlow = observeAdminStatus(userId)
 
         return combine(localUserFlow, adminStatusFlow) { user, isSuperuser ->
-            println("📊 [Repo] 本地用戶資料: name=${user?.name}, isSuperuser=$isSuperuser")
+            Timber.d("本地用戶資料: name=%s, isSuperuser=%s", user?.name, isSuperuser)
             if (isSuperuser && user != null) {
                 user.copy(role = "superuser")
             } else {

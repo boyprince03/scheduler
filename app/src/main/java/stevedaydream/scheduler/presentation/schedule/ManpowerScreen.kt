@@ -1,12 +1,12 @@
 package stevedaydream.scheduler.presentation.schedule
 
-import androidx.compose.foundation.layout.Box // ✅ 1. 匯入 Box
-import androidx.compose.foundation.layout.padding // ✅ 1. 匯入 padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier // ✅ 1. 匯入 Modifier
+import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.presentation.common.LoadingIndicator
 import stevedaydream.scheduler.util.DateUtils
@@ -37,7 +37,7 @@ fun ManpowerScreen(
                             onBackClick()
                         }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
@@ -49,9 +49,8 @@ fun ManpowerScreen(
                 }
             )
         }
-    ) { innerPadding -> // ✅ 2. Scaffold 提供了一個名為 innerPadding 的 PaddingValues
+    ) { innerPadding ->
         Box(
-            // ✅ 3. 將這個 innerPadding 應用到 Box 的 Modifier.padding() 上
             modifier = Modifier.padding(innerPadding)
         ) {
             if (uiState.isLoading) {
