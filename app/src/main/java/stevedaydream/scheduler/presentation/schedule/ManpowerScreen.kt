@@ -60,7 +60,11 @@ fun ManpowerScreen(
                     ManpowerStep.DEFAULTS -> ManpowerDefaultsScreen(
                         uiState = uiState,
                         onDefaultChange = viewModel::updateDefaultRequirement,
-                        onProceed = viewModel::applyDefaultsAndProceed
+                        onProceed = viewModel::applyDefaultsAndProceed,
+                        // ✅ 將新的 callbacks 傳入
+                        onDateClicked = viewModel::onDateClicked,
+                        onAddHoliday = viewModel::addHoliday,
+                        onDismissHolidayDialog = viewModel::dismissHolidayNameDialog
                     )
                     ManpowerStep.DETAILS -> ManpowerDetailScreen(
                         uiState = uiState,

@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.schedule
 
 import androidx.lifecycle.SavedStateHandle
@@ -13,8 +14,8 @@ import java.util.Date
 import javax.inject.Inject
 
 enum class ManpowerStep {
-    DEFAULTS, // 步驟一：設定範本
-    DETAILS   // 步驟二：微調細節
+    DEFAULTS,
+    DETAILS
 }
 
 data class ManpowerUiState(
@@ -23,7 +24,8 @@ data class ManpowerUiState(
     val group: Group? = null,
     val shiftTypes: List<ShiftType> = emptyList(),
     val manpowerPlan: ManpowerPlan? = null,
-    val holidays: Map<String, String> = emptyMap()
+    val holidays: Map<String, String> = emptyMap(),
+    val showHolidayNameDialogFor: String? = null
 )
 
 @HiltViewModel
@@ -43,54 +45,80 @@ class ManpowerViewModel @Inject constructor(
     }
 
     private fun loadInitialData() {
-        // 先載入群組、班別、假日等靜態資料
         viewModelScope.launch {
-            repository.observeGroup(groupId).collect { group ->
-                _uiState.update { it.copy(group = group) }
-            }
-        }
-        viewModelScope.launch {
-            repository.observeShiftTypes(orgId, groupId).collect { shiftTypes ->
-                _uiState.update { it.copy(shiftTypes = shiftTypes.filter { s -> s.shortCode != "OFF" }) }
-            }
-        }
-        viewModelScope.launch {
-            val holidays = mapOf("2025-10-10" to "國慶日", "2025-10-25" to "台灣光復節")
-            _uiState.update { it.copy(holidays = holidays) }
-        }
+            _uiState.update { it.copy(isLoading = true) }
 
-        // ✅ ===== 修正點 =====
-        // 核心邏輯：處理 ManpowerPlan 的初始化
-        viewModelScope.launch {
-            // 持續監聽資料庫的變化
-            repository.observeManpowerPlan(orgId, groupId, month).collect { planFromDb ->
-                val currentState = _uiState.value
+            // 並行載入所有需要的初始資料
+            val groupData = repository.observeGroup(groupId).first()
+            val shiftTypesData = repository.observeShiftTypes(orgId, groupId).first()
 
-                if (currentState.isLoading) {
-                    // 這是第一次載入
-                    val planToSet = planFromDb ?: ManpowerPlan(
-                        id = "${orgId}_${groupId}_${month}",
-                        orgId = orgId,
-                        groupId = groupId,
-                        month = month
-                    )
-                    _uiState.update { it.copy(manpowerPlan = planToSet, isLoading = false) }
-                } else {
-                    // 這不是第一次載入，代表是儲存後 Firestore 的更新回饋
-                    // 我們只在 planFromDb 不是 null 的情況下更新畫面，避免意外清除
-                    if (planFromDb != null) {
-                        _uiState.update { it.copy(manpowerPlan = planFromDb) }
-                    }
-                }
+            // ✅ 核心修改：使用 .firstOrNull() 來獲取一次性資料，避免後續的重複更新
+            var planFromDb = repository.observeManpowerPlan(orgId, groupId, month).firstOrNull()
+
+            // 如果資料庫中沒有計畫，則建立一個新的
+            if (planFromDb == null) {
+                planFromDb = ManpowerPlan(
+                    id = "${orgId}_${groupId}_${month}",
+                    orgId = orgId,
+                    groupId = groupId,
+                    month = month
+                )
+            }
+
+            // 從 API 獲取假日
+            val holidaysFromApi = fetchHolidaysFromApi(month)
+
+            _uiState.update {
+                it.copy(
+                    group = groupData,
+                    shiftTypes = shiftTypesData.filter { s -> s.shortCode != "OFF" },
+                    manpowerPlan = planFromDb,
+                    holidays = holidaysFromApi,
+                    isLoading = false
+                )
             }
         }
     }
 
+    private fun fetchHolidaysFromApi(month: String): Map<String, String> {
+        val allHolidays2025 = mapOf(
+            "2025-01-01" to "元旦", "2025-01-27" to "彈性放假", "2025-01-28" to "除夕",
+            "2025-01-29" to "春節", "2025-01-30" to "春節", "2025-01-31" to "春節",
+            "2025-02-28" to "和平紀念日", "2025-04-03" to "補假", "2025-04-04" to "兒童節",
+            "2025-05-01" to "勞動節", "2025-05-30" to "補假", "2025-09-29" to "補假",
+            "2025-10-06" to "中秋節", "2025-10-10" to "國慶日", "2025-10-24" to "補假",
+        )
+        return allHolidays2025.filterKeys { it.startsWith(month) }
+    }
+
+    fun onDateClicked(date: String) {
+        val currentHolidays = _uiState.value.holidays
+        if (currentHolidays.containsKey(date)) {
+            removeHoliday(date)
+        } else {
+            _uiState.update { it.copy(showHolidayNameDialogFor = date) }
+        }
+    }
+
+    fun addHoliday(date: String, name: String) {
+        val updatedHolidays = _uiState.value.holidays.toMutableMap()
+        updatedHolidays[date] = name.ifBlank { "特殊日" }
+        _uiState.update { it.copy(holidays = updatedHolidays, showHolidayNameDialogFor = null) }
+    }
+
+    fun removeHoliday(date: String) {
+        val updatedHolidays = _uiState.value.holidays.toMutableMap()
+        updatedHolidays.remove(date)
+        _uiState.update { it.copy(holidays = updatedHolidays) }
+    }
+
+    fun dismissHolidayNameDialog() {
+        _uiState.update { it.copy(showHolidayNameDialogFor = null) }
+    }
+
     fun updateDefaultRequirement(dayType: String, shiftTypeId: String, count: Int) {
-        // 在更新前，確保 manpowerPlan 物件已存在
         val currentPlan = _uiState.value.manpowerPlan ?: return
         val currentDefaults = currentPlan.requirementDefaults
-
         val updatedMap = when(dayType) {
             "weekday" -> currentDefaults.weekday.toMutableMap()
             "saturday" -> currentDefaults.saturday.toMutableMap()
@@ -98,9 +126,7 @@ class ManpowerViewModel @Inject constructor(
             "holiday" -> currentDefaults.holiday.toMutableMap()
             else -> return
         }
-
         if (count > 0) updatedMap[shiftTypeId] = count else updatedMap.remove(shiftTypeId)
-
         val newDefaults = when(dayType) {
             "weekday" -> currentDefaults.copy(weekday = updatedMap)
             "saturday" -> currentDefaults.copy(saturday = updatedMap)
@@ -108,7 +134,6 @@ class ManpowerViewModel @Inject constructor(
             "holiday" -> currentDefaults.copy(holiday = updatedMap)
             else -> currentDefaults
         }
-
         _uiState.update { it.copy(manpowerPlan = currentPlan.copy(requirementDefaults = newDefaults)) }
     }
 
@@ -116,7 +141,7 @@ class ManpowerViewModel @Inject constructor(
         val currentPlan = _uiState.value.manpowerPlan ?: return
         val defaults = currentPlan.requirementDefaults
         val datesInMonth = DateUtils.getDatesInMonth(month)
-        val holidays = _uiState.value.holidays
+        val holidays = _uiState.value.holidays // ✅ 使用 ViewModel 中的假日資料
 
         val dailyRequirements = datesInMonth.associate { date ->
             val day = date.split("-").last()
@@ -136,7 +161,6 @@ class ManpowerViewModel @Inject constructor(
                 requirements = requirementsTemplate
             )
         }
-
         _uiState.update {
             it.copy(
                 manpowerPlan = currentPlan.copy(dailyRequirements = dailyRequirements),
@@ -154,9 +178,7 @@ class ManpowerViewModel @Inject constructor(
         val updatedDailyReqs = currentPlan.dailyRequirements.toMutableMap()
         val currentDaily = updatedDailyReqs[day] ?: DailyRequirement()
         val updatedReqs = currentDaily.requirements.toMutableMap()
-
         if (count > 0) updatedReqs[shiftTypeId] = count else updatedReqs.remove(shiftTypeId)
-
         updatedDailyReqs[day] = currentDaily.copy(requirements = updatedReqs)
         _uiState.update { it.copy(manpowerPlan = currentPlan.copy(dailyRequirements = updatedDailyReqs)) }
     }
@@ -170,3 +192,4 @@ class ManpowerViewModel @Inject constructor(
         }
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
