@@ -57,6 +57,7 @@ class ScheduleViewModel @Inject constructor(
         loadGroupData()
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 函式修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     private fun loadGroupData() {
         auth.currentUser?.uid?.let { userId ->
             viewModelScope.launch {
@@ -81,14 +82,19 @@ class ScheduleViewModel @Inject constructor(
             }
         }
 
+        // ✅ 核心修正：使用 flatMapLatest 建立反應式資料流
+        // 當 group 的 memberIds 變更時，會自動重新取得並過濾 users 列表
         viewModelScope.launch {
-            repository.observeGroup(currentGroupId).collect { group ->
-                group?.let {
-                    repository.observeUsers(currentOrgId).collect { allUsers ->
-                        _users.value = allUsers.filter { user -> user.id in it.memberIds }
+            repository.observeGroup(currentGroupId)
+                .filterNotNull()
+                .flatMapLatest { group ->
+                    repository.observeUsers(currentOrgId).map { allUsers ->
+                        allUsers.filter { user -> user.id in group.memberIds }
                     }
                 }
-            }
+                .collect { groupMembers ->
+                    _users.value = groupMembers
+                }
         }
 
         viewModelScope.launch {
@@ -109,6 +115,8 @@ class ScheduleViewModel @Inject constructor(
             }
         }
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 函式修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
     fun toggleReservation(month: String, currentStatus: String) {
         viewModelScope.launch {
             val newStatus = when (currentStatus) {
@@ -169,6 +177,8 @@ class ScheduleViewModel @Inject constructor(
             _isGenerating.value = true
             try {
                 val manpowerPlan = repository.getManpowerPlanOnce(currentOrgId, currentGroupId, month)
+                // ✅ 新增：在排班前，獲取該月份的預約資料
+                val reservations = repository.observeReservations(currentOrgId, currentGroupId, month).first()
 
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
@@ -177,6 +187,7 @@ class ScheduleViewModel @Inject constructor(
                     users = _users.value,
                     shiftTypes = _shiftTypes.value,
                     requests = _requests.value,
+                    reservations = reservations, // ✅ 傳入預約資料
                     rules = _rules.value.filter { it.isEnabled },
                     manpowerPlan = manpowerPlan
                 )

@@ -5,6 +5,7 @@ import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule
 import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
 import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
+
 import stevedaydream.scheduler.domain.scheduling.rules.RuleViolation
 import stevedaydream.scheduler.util.DateUtils
 import java.util.*
@@ -36,6 +37,7 @@ class ScheduleGenerator {
         users: List<User>,
         shiftTypes: List<ShiftType>,
         requests: List<Request>,
+        reservations: List<Reservation>, // ✅ 新增：接收預約資料
         rules: List<SchedulingRule>,
         manpowerPlan: ManpowerPlan?
     ): ScheduleGenerationResult {
@@ -63,18 +65,30 @@ class ScheduleGenerator {
                 userAssignments[request.userId]?.set(day, offShift.id)
             }
 
-        // --- 2. 第二優先級：排 N 班 (只管今天) ---
+        // --- 2. 次高優先級：排入成員預約的班表 ---
+        reservations.forEach { reservation ->
+            reservation.dailyShifts.forEach { (day, shiftId) ->
+                // 確保這個位置是空的 (例如，未被上面的核准休假佔據)
+                if (userAssignments[reservation.userId]?.get(day) == null) {
+                    userAssignments[reservation.userId]?.set(day, shiftId)
+                }
+            }
+        }
+
+
+        // --- 3. 第三優先級：排 N 班 (只管今天) ---
         dates.forEach { date ->
             val day = date.split("-").last()
             val requiredCount = manpowerPlan.dailyRequirements[day]?.requirements?.get(nShift.id) ?: 0
             if (requiredCount == 0) return@forEach
 
+            // ✅ 篩選出今天尚未被排班的員工
             val availableUsers = users.filter { userAssignments[it.id]?.get(day) == null }.shuffled()
             val usersToAssign = availableUsers.take(requiredCount)
             usersToAssign.forEach { user -> userAssignments[user.id]?.set(day, nShift.id) }
         }
 
-        // --- 3. 第三 & 第四優先級：排 D 班和 S 班 (回頭看昨天) ---
+        // --- 4. 第四 & 第五優先級：排 D 班和 S 班 (回頭看昨天) ---
         val shiftsToProcess = listOf(dShift, sShift)
         shiftsToProcess.forEach { shift ->
             dates.forEach { date ->
@@ -101,7 +115,7 @@ class ScheduleGenerator {
             }
         }
 
-        // --- 5. 最低優先級：將所有剩餘空格填為 OFF ---
+        // --- 6. 最低優先級：將所有剩餘空格填為 OFF ---
         users.forEach { user ->
             dates.forEach { date ->
                 val day = date.split("-").last()
@@ -111,11 +125,11 @@ class ScheduleGenerator {
             }
         }
 
-        // --- 6. 事後評分 ---
+        // --- 7. 事後評分 ---
         val (finalViolations, finalScore) = validateAllUsers(userAssignments, users, shiftTypes, rules)
         val violationMessages = finalViolations.map { it.message }
 
-        // --- 7. 建立最終結果 ---
+        // --- 8. 建立最終結果 ---
         return buildResult(orgId, groupId, month, userAssignments, users, finalScore, violationMessages)
     }
 
