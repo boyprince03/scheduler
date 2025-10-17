@@ -550,7 +550,9 @@ class SchedulerRepositoryImpl @Inject constructor(
         // 將產生的資料集傳遞給 FirebaseDataSource 進行批次寫入
         return remoteDataSource.createTestData(dataSet)
     }
-
+    override suspend fun deleteAllTestData(): Result<Int> {
+        return remoteDataSource.deleteAllTestData()
+    }
     override suspend fun clearAllLocalData() {
         database.clearAllData()
     }

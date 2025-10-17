@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 // scheduler/presentation/schedule/ScheduleScreen.kt
 package stevedaydream.scheduler.presentation.schedule
 
@@ -38,9 +39,7 @@ fun ScheduleScreen(
     val isScheduler by viewModel.isScheduler.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     val schedules by viewModel.schedules.collectAsState()
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     val currentUser by viewModel.currentUser.collectAsState()
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var selectedMonth by remember { mutableStateOf(DateUtils.getCurrentMonthString()) }
@@ -92,7 +91,6 @@ fun ScheduleScreen(
                     onClaimClick = { viewModel.claimScheduler() }
                 )
 
-                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                 // 檢查是否符合顯示「加入群組」按鈕的條件
                 val showJoinButton = isScheduler &&
                         currentUser != null &&
@@ -109,24 +107,10 @@ fun ScheduleScreen(
                         Text("加入此群組以參與排班")
                     }
                 }
-                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
-                // 只有當預約功能關閉時，才顯示排班功能
-                if (currentGroup.reservationStatus == "inactive") {
-                    if (isScheduler) {
-                        SchedulerFunctionCard(
-                            isGenerating = isGenerating,
-                            selectedMonth = selectedMonth,
-                            onShowMonthPicker = { showMonthPicker = true },
-                            onNavigateToShiftTypeSettings = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            onNavigateToRules = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
-                            onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
-                            onGenerate = { viewModel.generateSmartSchedule(selectedMonth) }
-                        )
-                    }
-                } else {
-                    // 顯示預約卡片給所有人
+                // ✅ 核心修正：調整 UI 顯示邏輯
+                // 1. 如果預約正在進行 (active) 或已關閉 (closed)，顯示預約狀態卡片
+                if (currentGroup.reservationStatus == "active" || currentGroup.reservationStatus == "closed") {
                     ReservationStatusCard(
                         group = currentGroup,
                         isScheduler = isScheduler,
@@ -139,6 +123,21 @@ fun ScheduleScreen(
                     )
                 }
 
+                // 2. 如果是排班者，且預約未在進行中 (inactive 或 closed)，則顯示排班功能卡片
+                if (isScheduler && currentGroup.reservationStatus != "active") {
+                    SchedulerFunctionCard(
+                        isGenerating = isGenerating,
+                        selectedMonth = selectedMonth,
+                        onShowMonthPicker = { showMonthPicker = true },
+                        onNavigateToShiftTypeSettings = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
+                        onNavigateToRules = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
+                        onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                        onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                        onGenerate = { viewModel.generateSmartSchedule(selectedMonth) }
+                    )
+                }
+
+                // 3. 如果是排班者，且預約狀態為未啟用 (inactive)，才顯示「啟動預約」按鈕
                 if (isScheduler && currentGroup.reservationStatus == "inactive") {
                     Button(onClick = { viewModel.toggleReservation(selectedMonth, "inactive") }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.EventAvailable, contentDescription = null)
@@ -707,3 +706,4 @@ private fun SchedulerFunctionCard(
         }
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

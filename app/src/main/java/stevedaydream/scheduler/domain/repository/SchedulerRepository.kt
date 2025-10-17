@@ -124,6 +124,9 @@ interface SchedulerRepository {
     suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit>
     // ==================== 超級管理員 ====================
     suspend fun createTestData(orgName: String, ownerId: String, testMemberEmail: String): Result<Unit>
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun deleteAllTestData(): Result<Int>
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
     /**

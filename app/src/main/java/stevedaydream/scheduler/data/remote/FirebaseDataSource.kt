@@ -1059,7 +1059,38 @@ class FirebaseDataSource @Inject constructor(
                     batch.set(assignmentRef, assignment.toFirestoreMap())
                 }
             }
+
+            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+            dataSet.manpowerPlans.forEach { plan ->
+                val planRef = orgRef.collection("manpowerPlans").document(plan.id)
+                batch.set(planRef, plan.toFirestoreMap())
+            }
+
+            dataSet.reservations.forEach { reservation ->
+                val reservationRef = orgRef.collection("reservations").document(reservation.id)
+                batch.set(reservationRef, reservation.toFirestoreMap())
+            }
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
         }.await()
+    }
+    suspend fun deleteAllTestData(): Result<Int> = runCatching {
+        val testOrgPrefixes = listOf("自動生成測試公司", "完整模擬公司", "單元測試組織")
+        var deletedCount = 0
+
+        // 由於 Firestore 的查詢限制，我們需要為每個前綴執行一次查詢
+        for (prefix in testOrgPrefixes) {
+            val querySnapshot = firestore.collection("organizations")
+                .whereGreaterThanOrEqualTo("orgName", prefix)
+                .whereLessThanOrEqualTo("orgName", prefix + '\uf8ff')
+                .get()
+                .await()
+
+            for (document in querySnapshot.documents) {
+                deleteOrganizationAndSubcollections(document.id).getOrThrow()
+                deletedCount++
+            }
+        }
+        deletedCount
     }
 }
 // 修改結束

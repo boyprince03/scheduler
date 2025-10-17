@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.schedule
 
 import androidx.compose.foundation.BorderStroke
@@ -75,20 +76,19 @@ fun ShiftReservationScreen(
                 // 班別圖例
                 ShiftLegend(shiftTypes = uiState.shiftTypes)
                 Divider()
-                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
                 // 排班表格
                 ReservationTable(
                     month = uiState.month,
                     users = uiState.users,
                     shiftTypes = uiState.shiftTypes,
                     allReservations = uiState.allReservations,
+                    myReservation = uiState.myReservation, // ✅ 傳入最新的 myReservation
                     myUserId = viewModel.currentUserId,
                     onCellClick = { day ->
                         selectedDay = day
                         showShiftSelector = true
                     }
                 )
-                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             }
         }
     }
@@ -142,20 +142,29 @@ fun ShiftReservationScreen(
     }
 }
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 @Composable
 fun ReservationTable(
     month: String,
     users: List<User>,
     shiftTypes: List<ShiftType>,
     allReservations: List<Reservation>,
+    myReservation: Reservation?, // ✅ 接收 myReservation
     myUserId: String?,
     onCellClick: (String) -> Unit
 ) {
     val dates = DateUtils.getDatesInMonth(month)
     val scrollState = rememberScrollState()
     val shiftTypeMap = shiftTypes.associateBy { it.id }
-    val reservationMap = allReservations.associateBy { it.userId }
+
+    // ✅ 建立一個可變的 Map，並優先使用 myReservation 的資料
+    val reservationMap = remember(allReservations, myReservation) {
+        val map = allReservations.associateBy { it.userId }.toMutableMap()
+        myReservation?.let {
+            map[it.userId] = it
+        }
+        map
+    }
+
 
     Column(
         modifier = Modifier
@@ -251,7 +260,6 @@ fun ReservationTable(
         }
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 @Composable
 private fun ShiftSelectorItem(shift: ShiftType, isSelected: Boolean, onClick: () -> Unit) {
@@ -324,3 +332,4 @@ private fun ReservationSummaryDialog(summary: ReservationSaveSummary, onDismiss:
         confirmButton = { Button(onClick = onDismiss) { Text("確認") } }
     )
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

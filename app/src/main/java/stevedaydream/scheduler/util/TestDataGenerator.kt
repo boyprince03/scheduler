@@ -252,6 +252,72 @@ object TestDataGenerator {
     }
 
     /**
+     * 新增：產生測試用的人力規劃
+     */
+    private fun generateManpowerPlan(
+        orgId: String,
+        groupId: String,
+        month: String
+    ): ManpowerPlan {
+        val requirementDefaults = RequirementDefaults(
+            weekday = mapOf("day-s" to 2, "day-d" to 1),
+            saturday = mapOf("day-d" to 1, "night-n" to 1),
+            sunday = mapOf("day-d" to 1, "night-n" to 1)
+        )
+        val dates = DateUtils.getDatesInMonth(month)
+        val dailyRequirements = dates.associate { date ->
+            val day = date.split("-").last()
+            val dayOfWeek = DateUtils.getDayOfWeek(date)
+            val template = when (dayOfWeek) {
+                6 -> requirementDefaults.saturday
+                0 -> requirementDefaults.sunday
+                else -> requirementDefaults.weekday
+            }
+            day to DailyRequirement(date = date, requirements = template)
+        }
+
+        return ManpowerPlan(
+            id = "${orgId}_${groupId}_${month}",
+            orgId = orgId,
+            groupId = groupId,
+            month = month,
+            requirementDefaults = requirementDefaults,
+            dailyRequirements = dailyRequirements,
+            updatedAt = Date()
+        )
+    }
+
+    /**
+     * 新增：產生測試用的預約班表
+     */
+    private fun generateReservations(
+        orgId: String,
+        groupId: String,
+        users: List<User>,
+        month: String
+    ): List<Reservation> {
+        val dates = DateUtils.getDatesInMonth(month)
+        // 只為前三位使用者產生預約
+        return users.take(3).map { user ->
+            val dailyShifts = dates.shuffled().take(5).associate { date ->
+                val day = date.split("-").last()
+                day to "off" // 隨機預約 5 天假
+            }
+            Reservation(
+                id = "res-${user.id}-${UUID.randomUUID().toString().take(4)}",
+                orgId = orgId,
+                groupId = groupId,
+                month = month,
+                userId = user.id,
+                userName = user.name,
+                dailyShifts = dailyShifts,
+                updatedAt = Date()
+            )
+        }
+    }
+
+
+    /**
      * 完整的測試資料集
      */
     data class TestDataSet(
@@ -262,7 +328,9 @@ object TestDataGenerator {
         val requests: List<Request>,
         val rules: List<SchedulingRule>,
         val schedules: List<Schedule>,
-        val assignments: List<Assignment>
+        val assignments: List<Assignment>,
+        val manpowerPlans: List<ManpowerPlan>, // 新增
+        val reservations: List<Reservation>    // 新增
     )
 
     /**
@@ -277,6 +345,7 @@ object TestDataGenerator {
         val org = generateOrganization(name = orgName, ownerId = ownerId, orgCode = orgCode)
         var users = generateUsers(org.id)
         var groups = generateGroups(org.id, users.map { it.id })
+        val month = DateUtils.getCurrentMonthString()
 
         if (testMemberEmail.isNotBlank()) {
             val testMemberId = "test-member-${UUID.randomUUID().toString().take(8)}"
@@ -297,16 +366,22 @@ object TestDataGenerator {
         }
 
         val shiftTypes = generateShiftTypes(org.id)
-        val requests = generateRequests(org.id, users)
-        // ✅ 直接呼叫新的函式來取得醫院規則模板
+        val requests = generateRequests(org.id, users, month)
         val rules = getHospitalNursePractitionerRules()
 
         val schedulesAndAssignments = groups.map { group ->
             val groupUsers = users.filter { it.id in group.memberIds }
-            generateConsistentScheduleForGroup(org.id, group, groupUsers)
+            generateConsistentScheduleForGroup(org.id, group, groupUsers, month)
         }
         val schedules = schedulesAndAssignments.map { it.first }
         val assignments = schedulesAndAssignments.flatMap { it.second }
+
+        // 產生人力規劃和預約資料
+        val manpowerPlans = groups.map { generateManpowerPlan(org.id, it.id, month) }
+        val reservations = groups.flatMap { group ->
+            val groupUsers = users.filter { it.id in group.memberIds }
+            generateReservations(org.id, group.id, groupUsers, month)
+        }
 
         return TestDataSet(
             organization = org,
@@ -314,9 +389,11 @@ object TestDataGenerator {
             groups = groups,
             shiftTypes = shiftTypes,
             requests = requests,
-            rules = rules, // ✅ 使用新的規則列表
+            rules = rules,
             schedules = schedules,
-            assignments = assignments
+            assignments = assignments,
+            manpowerPlans = manpowerPlans,
+            reservations = reservations
         )
     }
 }
