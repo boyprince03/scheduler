@@ -1,3 +1,4 @@
+// scheduler/presentation/schedule/ScheduleScreen.kt
 package stevedaydream.scheduler.presentation.schedule
 
 import android.R.attr.text
@@ -30,15 +31,16 @@ fun ScheduleScreen(
     onNavigateToShiftTypeSettings: (String, String) -> Unit,
     onNavigateToScheduleDetail: (String, String, String) -> Unit,
     onNavigateToManpower: (String, String, String) -> Unit,
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改开始 ▼▼▼▼▼▼▼▼▼▼▼▼
     onNavigateToReservation: (String, String, String) -> Unit
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改结束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
     val group by viewModel.group.collectAsState()
     val canSchedule by viewModel.canSchedule.collectAsState()
     val isScheduler by viewModel.isScheduler.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     val schedules by viewModel.schedules.collectAsState()
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    val currentUser by viewModel.currentUser.collectAsState()
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var selectedMonth by remember { mutableStateOf(DateUtils.getCurrentMonthString()) }
@@ -89,6 +91,25 @@ fun ScheduleScreen(
                     isScheduler = isScheduler,
                     onClaimClick = { viewModel.claimScheduler() }
                 )
+
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                // 檢查是否符合顯示「加入群組」按鈕的條件
+                val showJoinButton = isScheduler &&
+                        currentUser != null &&
+                        (currentUser?.role == "org_admin" || currentUser?.role == "superuser") &&
+                        !currentGroup.memberIds.contains(currentUser!!.id)
+
+                if (showJoinButton) {
+                    OutlinedButton(
+                        onClick = { viewModel.addSchedulerToGroup() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.GroupAdd, contentDescription = "加入群組")
+                        Spacer(Modifier.width(8.dp))
+                        Text("加入此群組以參與排班")
+                    }
+                }
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
                 // 只有當預約功能關閉時，才顯示排班功能
                 if (currentGroup.reservationStatus == "inactive") {

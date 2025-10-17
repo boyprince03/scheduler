@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Groups // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -69,14 +70,16 @@ fun MemberListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(uiState.members, key = { it.id }) { member ->
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                items(uiState.membersInfo, key = { it.user.id }) { memberInfo ->
                     MemberCard(
                         orgId = orgId,
-                        member = member,
+                        memberInfo = memberInfo,
                         canEdit = uiState.currentUser?.role in listOf("org_admin", "superuser"),
-                        onEditClick = { userToEdit = member }
+                        onEditClick = { userToEdit = memberInfo.user }
                     )
                 }
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             }
         }
     }
@@ -96,10 +99,12 @@ fun MemberListScreen(
 @Composable
 private fun MemberCard(
     orgId: String,
-    member: User,
+    memberInfo: MemberWithGroupInfo, // 改用新的資料類別
     canEdit: Boolean,
     onEditClick: () -> Unit
 ) {
+    val member = memberInfo.user
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -112,10 +117,17 @@ private fun MemberCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(40.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(member.name, style = MaterialTheme.typography.titleMedium)
                 Text(member.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 新增群組資訊顯示
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Default.Groups, contentDescription = "群組", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
+                    Text(memberInfo.groupName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                }
             }
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             // 從 employmentStatus Map 中取得特定組織的狀態
             val status = member.employmentStatus[orgId] ?: "在職"
             StatusChip(label = status)

@@ -1,11 +1,11 @@
 // scheduler/presentation/schedule/ScheduleViewModel.kt
-
 package stevedaydream.scheduler.presentation.schedule
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -27,6 +27,11 @@ class ScheduleViewModel @Inject constructor(
 
     private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group.asStateFlow()
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    private val _currentUser = MutableStateFlow<User?>(null)
+    val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     val isScheduler: StateFlow<Boolean> = _group.map { group ->
         group?.schedulerId == auth.currentUser?.uid
@@ -54,6 +59,17 @@ class ScheduleViewModel @Inject constructor(
     }
 
     private fun loadGroupData() {
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+        // 取得當前登入使用者的完整資料
+        auth.currentUser?.uid?.let { userId ->
+            viewModelScope.launch {
+                repository.observeUser(userId).collect { user ->
+                    _currentUser.value = user
+                }
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
         viewModelScope.launch {
             repository.observeGroup(currentGroupId).collect { groupData ->
                 _group.value = groupData
@@ -119,6 +135,23 @@ class ScheduleViewModel @Inject constructor(
             )
         }
     }
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    /**
+     * 將身為排班者的管理員加入到目前群組中
+     */
+    fun addSchedulerToGroup() {
+        viewModelScope.launch {
+            auth.currentUser?.uid?.let { userId ->
+                repository.updateGroup(
+                    orgId = currentOrgId,
+                    groupId = currentGroupId,
+                    updates = mapOf("memberIds" to FieldValue.arrayUnion(userId))
+                )
+            }
+        }
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun releaseScheduler() {
         viewModelScope.launch {

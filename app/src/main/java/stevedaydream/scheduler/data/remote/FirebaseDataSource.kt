@@ -1,3 +1,4 @@
+// 修改開始
 // scheduler/data/remote/FirebaseDataSource.kt
 package stevedaydream.scheduler.data.remote
 
@@ -192,17 +193,19 @@ class FirebaseDataSource @Inject constructor(
         }.await()
         orgRef.id
     }
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun deleteOrganizationAndSubcollections(orgId: String): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(orgId)
 
         // 警告：在生產環境中，強烈建議使用 Cloud Function 進行遞歸刪除，以確保原子性和完整性。
         // 這個客戶端實作是為了演示，可能會很慢或無法完整刪除。
-        // 此實作會刪除已知的子集合。
-
         val batch = firestore.batch()
 
-        val subcollections = listOf("users", "groups", "shiftTypes", "schedulingRules", "schedules", "invites", "groupJoinRequests", "manpowerPlans")
-
+        // 刪除已知的子集合
+        val subcollections = listOf(
+            "users", "groups", "shiftTypes", "schedulingRules",
+            "schedules", "invites", "groupJoinRequests", "manpowerPlans"
+        )
         for (collectionName in subcollections) {
             val collectionRef = orgRef.collection(collectionName)
             val documents = collectionRef.get().await()
@@ -218,20 +221,31 @@ class FirebaseDataSource @Inject constructor(
             }
         }
 
+        // 刪除組織文件本身
         batch.delete(orgRef)
+        // 提交第一批刪除（刪除組織和其子集合）
         batch.commit().await()
 
-        // 從所有成員的 user 物件中移除此 orgId
+        // 第二階段：清理頂層 users 集合
         val usersQuery = firestore.collection("users").whereArrayContains("orgIds", orgId).get().await()
         firestore.runBatch { userBatch ->
             usersQuery.documents.forEach { doc ->
-                userBatch.update(doc.reference, "orgIds", FieldValue.arrayRemove(orgId))
-                if (doc.getString("currentOrgId") == orgId) {
-                    userBatch.update(doc.reference, "currentOrgId", "")
+                val user = doc.toObject(User::class.java)
+                // 如果使用者只屬於這個被刪除的組織，則直接刪除該使用者文件
+                if (user != null && user.orgIds.size == 1 && user.orgIds.contains(orgId)) {
+                    userBatch.delete(doc.reference)
+                } else {
+                    // 否則，只從 orgIds 陣列中移除該組織 ID
+                    userBatch.update(doc.reference, "orgIds", FieldValue.arrayRemove(orgId))
+                    // 如果被刪除的組織是當前組織，則清空 currentOrgId
+                    if (doc.getString("currentOrgId") == orgId) {
+                        userBatch.update(doc.reference, "currentOrgId", "")
+                    }
                 }
             }
         }.await()
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganization(orgId: String): Flow<Organization?> {
         if (orgId.isBlank()) {
             return flowOf(null)
@@ -327,7 +341,9 @@ class FirebaseDataSource @Inject constructor(
             }
     }
     fun observeUsers(orgId: String): Flow<List<User>> {
-        return firestore.collection("organizations/$orgId/users")
+        // 改為查詢頂層的 'users' 集合，這是 App 主要的使用者資料來源
+        return firestore.collection("users")
+            .whereArrayContains("orgIds", orgId)
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull {
@@ -940,7 +956,6 @@ class FirebaseDataSource @Inject constructor(
             }
         }.await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedules/$scheduleId/assignments").document()
@@ -1002,6 +1017,9 @@ class FirebaseDataSource @Inject constructor(
             dataSet.users.forEach { user ->
                 val userRef = orgRef.collection("users").document(user.id)
                 batch.set(userRef, user.toFirestoreMap())
+                // 同時將使用者資料寫入頂層集合，以確保資料一致性
+                val topLevelUserRef = firestore.collection("users").document(user.id)
+                batch.set(topLevelUserRef, user.toFirestoreMap())
             }
 
             dataSet.groups.forEach { group ->
@@ -1032,3 +1050,4 @@ class FirebaseDataSource @Inject constructor(
         }.await()
     }
 }
+// 修改結束

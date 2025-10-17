@@ -1,4 +1,4 @@
-// 修改開始
+// scheduler/data/local/SchedulerDatabase.kt
 package stevedaydream.scheduler.data.local
 
 import androidx.room.*
@@ -107,10 +107,10 @@ interface OrganizationDao {
 
 @Dao
 interface UserDao {
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 1 ▼▼▼▼▼▼▼▼▼▼▼▼
-    @Query("SELECT * FROM users WHERE orgIds LIKE '%' || :orgId || '%'")
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    @Query("SELECT * FROM users WHERE ',' || orgIds || ',' LIKE '%,' || :orgId || ',%'")
     fun getUsersByOrg(orgId: String): Flow<List<User>>
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改點 1 ▲▲▲▲▲▲▲▲▲▲▲▲
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     @Query("SELECT * FROM users WHERE id = :userId")
     fun getUser(userId: String): Flow<User?>
@@ -121,10 +121,10 @@ interface UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: User)
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 2 ▼▼▼▼▼▼▼▼▼▼▼▼
-    @Query("DELETE FROM users WHERE orgIds LIKE '%' || :orgId || '%'")
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    @Query("DELETE FROM users WHERE ',' || orgIds || ',' LIKE '%,' || :orgId || ',%'")
     suspend fun deleteUsersByOrg(orgId: String)
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改點 2 ▲▲▲▲▲▲▲▲▲▲▲▲
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 
@@ -157,10 +157,8 @@ interface ShiftTypeDao {
     @Query("DELETE FROM shift_types WHERE orgId = :orgId")
     suspend fun deleteShiftTypesByOrg(orgId: String)
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     @Query("DELETE FROM shift_types WHERE orgId = :orgId AND (groupId IS NULL OR groupId = :groupId)")
     suspend fun deleteDefaultAndGroupShiftTypes(orgId: String, groupId: String)
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
 @Dao
@@ -326,7 +324,7 @@ interface GroupJoinRequestDao {
         OrganizationJoinRequest::class,   // ✨ 新增
         GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 18, // ✨ 版本號記得更新
+    version = 19, // ✨ 版本號記得更新
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -351,4 +349,3 @@ abstract class SchedulerDatabase : RoomDatabase() {
         clearAllTables()
     }
 }
-// 修改結束

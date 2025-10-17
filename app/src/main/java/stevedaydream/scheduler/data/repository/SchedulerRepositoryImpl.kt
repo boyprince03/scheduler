@@ -1,4 +1,3 @@
-// 修改開始
 // scheduler/data/repository/SchedulerRepositoryImpl.kt
 package stevedaydream.scheduler.data.repository
 
@@ -177,9 +176,20 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.observeAllUsers()
     }
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeUsers(orgId: String): Flow<List<User>> {
-        return remoteDataSource.observeUsers(orgId)
+        externalScope.launch {
+            remoteDataSource.observeUsers(orgId)
+                .catch { e -> Timber.e(e, "Error syncing users for orgId: $orgId") }
+                .collect { remoteUsers ->
+                    // 採用「先刪除再插入」的模式，確保本地快取與遠端一致
+                    database.userDao().deleteUsersByOrg(orgId)
+                    database.userDao().insertUsers(remoteUsers)
+                }
+        }
+        return database.userDao().getUsersByOrg(orgId)
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
     override fun observeUser(userId: String): Flow<User?> {
@@ -481,7 +491,7 @@ class SchedulerRepositoryImpl @Inject constructor(
             // 遠端成功後，刪除本地快取
             database.assignmentDao().deleteAssignmentsBySchedule(scheduleId)
             // 這一步驟需要你在 ScheduleDao 新增 deleteScheduleById 函式 (下一步驟)
-             database.scheduleDao().deleteScheduleById(scheduleId)
+            database.scheduleDao().deleteScheduleById(scheduleId)
         }
     }
 
@@ -541,4 +551,3 @@ class SchedulerRepositoryImpl @Inject constructor(
         database.clearAllData()
     }
 }
-// 修改結束
