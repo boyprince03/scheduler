@@ -1,4 +1,3 @@
-// scheduler/presentation/members/MemberListViewModel.kt
 package stevedaydream.scheduler.presentation.members
 
 import androidx.lifecycle.ViewModel
@@ -11,12 +10,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import stevedaydream.scheduler.data.model.Group
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+import java.text.Collator
+import java.util.Locale
 import javax.inject.Inject
 
 // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+enum class SortOption(val displayName: String) {
+    NAME("姓名筆畫"),
+    GROUP("所屬群組")
+}
+
 data class MemberWithGroupInfo(
     val user: User,
     val groupName: String
@@ -24,10 +29,11 @@ data class MemberWithGroupInfo(
 
 data class MemberListUiState(
     val isLoading: Boolean = true,
-    val membersInfo: List<MemberWithGroupInfo> = emptyList(), // 改用新的資料類別
+    val membersInfo: List<MemberWithGroupInfo> = emptyList(),
     val currentUser: User? = null,
     val error: String? = null,
-    val updateResult: Result<Unit>? = null
+    val updateResult: Result<Unit>? = null,
+    val sortOption: SortOption = SortOption.NAME
 )
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -41,13 +47,15 @@ class MemberListViewModel @Inject constructor(
     val uiState: StateFlow<MemberListUiState> = _uiState.asStateFlow()
 
     private var currentOrgId: String? = null
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    private val _sortOption = MutableStateFlow(SortOption.NAME)
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun loadData(orgId: String) {
         if (orgId == currentOrgId) return
         currentOrgId = orgId
         _uiState.update { it.copy(isLoading = true) }
 
-        // 協程一：監聽當前登入使用者以判斷權限
         viewModelScope.launch {
             auth.currentUser?.uid?.let { userId ->
                 repository.observeUser(userId).collect { user ->
@@ -57,29 +65,47 @@ class MemberListViewModel @Inject constructor(
         }
 
         // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-        // 協程二：合併使用者與群組資料流
         viewModelScope.launch {
             val usersFlow = repository.observeUsers(orgId)
             val groupsFlow = repository.observeGroups(orgId)
 
-            combine(usersFlow, groupsFlow) { users, groups ->
-                val groupMap = groups.associateBy { it.id }
-                users.map { user ->
-                    // 找出使用者所在的群組名稱
+            combine(usersFlow, groupsFlow, _sortOption) { users, groups, sortOption ->
+                val membersInfo = users.map { user ->
                     val groupName = groups.find { it.memberIds.contains(user.id) }?.groupName ?: "未分配群組"
                     MemberWithGroupInfo(user, groupName)
                 }
-            }.collect { membersInfo ->
+
+                val sortedMembers = when (sortOption) {
+                    SortOption.NAME -> {
+                        val collator = Collator.getInstance(Locale.CHINESE)
+                        membersInfo.sortedWith(compareBy(collator) { it.user.name })
+                    }
+                    SortOption.GROUP -> {
+                        val collator = Collator.getInstance(Locale.CHINESE)
+                        membersInfo.sortedWith(
+                            compareBy<MemberWithGroupInfo> { it.groupName }
+                                .thenBy(collator) { it.user.name }
+                        )
+                    }
+                }
+                // 回傳一個 Pair，以便同時更新列表和 UI 狀態中的排序選項
+                Pair(sortedMembers, sortOption)
+            }.collect { (sortedList, currentSortOption) ->
                 _uiState.update {
                     it.copy(
-                        membersInfo = membersInfo,
-                        isLoading = false
+                        membersInfo = sortedList,
+                        isLoading = false,
+                        sortOption = currentSortOption
                     )
                 }
             }
         }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     }
+
+    fun onSortChange(sortOption: SortOption) {
+        _sortOption.value = sortOption
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun updateUserStatus(orgId: String, userId: String, newStatus: String) {
         viewModelScope.launch {

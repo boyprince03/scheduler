@@ -670,6 +670,18 @@ class FirebaseDataSource @Inject constructor(
             batch.update(newGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
         }.await()
     }
+    suspend fun addUserToGroupAndOrg(orgId: String, groupId: String, userId: String): Result<Unit> = runCatching {
+        val userRef = firestore.collection("users").document(userId)
+        val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
+
+        firestore.runBatch { batch ->
+            // 1. 將 orgId 加入使用者的 orgIds 陣列中
+            batch.update(userRef, "orgIds", FieldValue.arrayUnion(orgId))
+            // 2. 將 userId 加入群組的 memberIds 陣列中
+            batch.update(groupRef, "memberIds", FieldValue.arrayUnion(userId))
+        }.await()
+    }
+
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String, leaseDuration: Long = 2 * 60 * 60 * 1000): Result<Boolean> = runCatching {
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 

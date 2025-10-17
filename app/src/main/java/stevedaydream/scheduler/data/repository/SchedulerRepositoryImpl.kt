@@ -176,27 +176,25 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.observeAllUsers()
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     override fun observeUsers(orgId: String): Flow<List<User>> {
         externalScope.launch {
             remoteDataSource.observeUsers(orgId)
                 .catch { e -> Timber.e(e, "Error syncing users for orgId: $orgId") }
                 .collect { remoteUsers ->
-                    // 採用「先刪除再插入」的模式，確保本地快取與遠端一致
-                    database.userDao().deleteUsersByOrg(orgId)
+                    // ✅ 核心修正：移除 destructive delete。
+                    // OnConflictStrategy.REPLACE in the DAO handles inserts and updates.
+                    // We should not delete users here, as a user can belong to multiple organizations.
                     database.userDao().insertUsers(remoteUsers)
                 }
         }
         return database.userDao().getUsersByOrg(orgId)
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
 
     override fun observeUser(userId: String): Flow<User?> {
-        // ✅ 新增：啟動 Firestore 同步
+        // 啟動 Firestore 同步
         externalScope.launch {
             try {
-                // 從頂層 users 集合監聽
                 remoteDataSource.observeUserFromTopLevel(userId)
                     .collect { remoteUser ->
                         remoteUser?.let {
@@ -213,6 +211,7 @@ class SchedulerRepositoryImpl @Inject constructor(
         val localUserFlow = database.userDao().getUser(userId)
         val adminStatusFlow = observeAdminStatus(userId)
 
+        // ✅ 恢復：移除不必要的 distinctUntilChanged()，讓穩定的上游 Flow 自然流動
         return combine(localUserFlow, adminStatusFlow) { user, isSuperuser ->
             Timber.d("本地用戶資料: name=%s, isSuperuser=%s", user?.name, isSuperuser)
             if (isSuperuser && user != null) {
@@ -310,6 +309,11 @@ class SchedulerRepositoryImpl @Inject constructor(
     ): Result<Unit> {
         return remoteDataSource.updateUserGroup(orgId, userId, newGroupId, oldGroupId)
     }
+
+    override suspend fun addUserToGroupAndOrg(orgId: String, groupId: String, userId: String): Result<Unit> {
+        return remoteDataSource.addUserToGroupAndOrg(orgId, groupId, userId)
+    }
+
 
     // ==================== 排班者生命週期 ====================
     override suspend fun claimScheduler(

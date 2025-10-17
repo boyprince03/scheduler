@@ -45,6 +45,7 @@ interface SchedulerRepository {
     suspend fun generateUniqueOrgCode(): String
     suspend fun getOrganizationByCode(orgCode: String): Result<Organization?>
 
+    suspend fun addUserToGroupAndOrg(orgId: String, groupId: String, userId: String): Result<Unit>
 
     // ==================== 使用者 ====================
     suspend fun createUser(orgId: String, user: User): Result<String>

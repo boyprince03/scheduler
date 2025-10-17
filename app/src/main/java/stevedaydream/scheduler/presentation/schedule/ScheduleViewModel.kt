@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 // scheduler/presentation/schedule/ScheduleViewModel.kt
 package stevedaydream.scheduler.presentation.schedule
 
@@ -28,10 +29,8 @@ class ScheduleViewModel @Inject constructor(
     private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group.asStateFlow()
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     val isScheduler: StateFlow<Boolean> = _group.map { group ->
         group?.schedulerId == auth.currentUser?.uid
@@ -59,8 +58,6 @@ class ScheduleViewModel @Inject constructor(
     }
 
     private fun loadGroupData() {
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-        // 取得當前登入使用者的完整資料
         auth.currentUser?.uid?.let { userId ->
             viewModelScope.launch {
                 repository.observeUser(userId).collect { user ->
@@ -68,7 +65,6 @@ class ScheduleViewModel @Inject constructor(
                 }
             }
         }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
         viewModelScope.launch {
             repository.observeGroup(currentGroupId).collect { groupData ->
@@ -136,22 +132,20 @@ class ScheduleViewModel @Inject constructor(
         }
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     /**
      * 將身為排班者的管理員加入到目前群組中
      */
     fun addSchedulerToGroup() {
         viewModelScope.launch {
             auth.currentUser?.uid?.let { userId ->
-                repository.updateGroup(
+                repository.addUserToGroupAndOrg(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
-                    updates = mapOf("memberIds" to FieldValue.arrayUnion(userId))
+                    userId = userId
                 )
             }
         }
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     fun releaseScheduler() {
         viewModelScope.launch {
@@ -174,10 +168,8 @@ class ScheduleViewModel @Inject constructor(
         viewModelScope.launch {
             _isGenerating.value = true
             try {
-                // ✅ 修改點：改為呼叫新的一次性讀取函式，並加上 await()
                 val manpowerPlan = repository.getManpowerPlanOnce(currentOrgId, currentGroupId, month)
 
-                // 後續的排班邏輯保持不變
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
@@ -186,7 +178,7 @@ class ScheduleViewModel @Inject constructor(
                     shiftTypes = _shiftTypes.value,
                     requests = _requests.value,
                     rules = _rules.value.filter { it.isEnabled },
-                    manpowerPlan = manpowerPlan // 將讀取到的 manpowerPlan 傳入
+                    manpowerPlan = manpowerPlan
                 )
 
                 repository.createScheduleAndAssignments(
@@ -207,9 +199,9 @@ class ScheduleViewModel @Inject constructor(
         viewModelScope.launch {
             repository.deleteSchedule(currentOrgId, scheduleId)
                 .onFailure {
-                    // 可在此處處理刪除失敗的 UI 提示
                     println("❌ 刪除班表失敗: ${it.message}")
                 }
         }
     }
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

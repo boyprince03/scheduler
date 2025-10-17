@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 // scheduler/presentation/organization/OrganizationListViewModel.kt
 package stevedaydream.scheduler.presentation.organization
 
@@ -16,7 +17,6 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import java.util.*
 import javax.inject.Inject
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 data class OrganizationWithMemberCount(
     val organization: Organization,
     val memberCount: Int
