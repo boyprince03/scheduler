@@ -86,7 +86,9 @@ data class Group(
     val memberIds: List<String> = emptyList(),
     val schedulerId: String? = null,
     val schedulerName: String? = null,
-    val schedulerLeaseExpiresAt: Date? = null
+    val schedulerLeaseExpiresAt: Date? = null,
+    val reservationStatus: String = "inactive", // "inactive", "active", "closed"
+    val reservationMonth: String? = null
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
         put("groupName", groupName)
@@ -94,6 +96,8 @@ data class Group(
         schedulerId?.let { put("schedulerId", it) }
         schedulerName?.let { put("schedulerName", it) }
         schedulerLeaseExpiresAt?.let { put("schedulerLeaseExpiresAt", it) }
+        put("reservationStatus", reservationStatus)
+        reservationMonth?.let { put("reservationMonth", it) }
     }
 
     fun isSchedulerActive(): Boolean {
@@ -179,6 +183,29 @@ data class Request(
     )
 }
 
+// ==================== 預約班表 ====================
+@Entity(tableName = "reservations")
+data class Reservation(
+    @PrimaryKey val id: String = "",
+    val orgId: String = "",
+    val groupId: String = "",
+    val month: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    // Map<"day", "shiftId">, e.g., "01" -> "shift_id_123"
+    val dailyShifts: Map<String, String> = emptyMap(),
+    val updatedAt: Date = Date()
+) {
+    fun toFirestoreMap(): Map<String, Any> = mapOf(
+        "orgId" to orgId,
+        "groupId" to groupId,
+        "month" to month,
+        "userId" to userId,
+        "userName" to userName,
+        "dailyShifts" to dailyShifts,
+        "updatedAt" to updatedAt
+    )
+}
 // ==================== 排班規則 ====================
 @Entity(tableName = "scheduling_rules")
 data class SchedulingRule(

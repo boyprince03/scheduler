@@ -14,6 +14,7 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 import javax.inject.Inject
 
+
 @HiltViewModel
 class ScheduleViewModel @Inject constructor(
     private val repository: SchedulerRepository,
@@ -96,7 +97,17 @@ class ScheduleViewModel @Inject constructor(
             }
         }
     }
-
+    fun toggleReservation(month: String, currentStatus: String) {
+        viewModelScope.launch {
+            val newStatus = when (currentStatus) {
+                "inactive" -> "active"
+                "active" -> "closed"
+                "closed" -> "active"
+                else -> "inactive"
+            }
+            repository.updateReservationStatus(currentOrgId, currentGroupId, month, newStatus)
+        }
+    }
     fun claimScheduler() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch

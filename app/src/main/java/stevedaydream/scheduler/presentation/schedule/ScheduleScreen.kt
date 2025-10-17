@@ -29,7 +29,10 @@ fun ScheduleScreen(
     onNavigateToManualSchedule: (String, String, String) -> Unit,
     onNavigateToShiftTypeSettings: (String, String) -> Unit,
     onNavigateToScheduleDetail: (String, String, String) -> Unit,
-    onNavigateToManpower: (String, String, String) -> Unit
+    onNavigateToManpower: (String, String, String) -> Unit,
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改开始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    onNavigateToReservation: (String, String, String) -> Unit
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改结束 ▲▲▲▲▲▲▲▲▲▲▲▲
 ) {
     val group by viewModel.group.collectAsState()
     val canSchedule by viewModel.canSchedule.collectAsState()
@@ -86,88 +89,40 @@ fun ScheduleScreen(
                     isScheduler = isScheduler,
                     onClaimClick = { viewModel.claimScheduler() }
                 )
-            }
 
-            // 功能區域
-            if (isScheduler) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "排班功能",
-                            style = MaterialTheme.typography.titleMedium
+                // 只有當預約功能關閉時，才顯示排班功能
+                if (currentGroup.reservationStatus == "inactive") {
+                    if (isScheduler) {
+                        SchedulerFunctionCard(
+                            isGenerating = isGenerating,
+                            selectedMonth = selectedMonth,
+                            onShowMonthPicker = { showMonthPicker = true },
+                            onNavigateToShiftTypeSettings = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
+                            onNavigateToRules = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
+                            onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                            onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
+                            onGenerate = { viewModel.generateSmartSchedule(selectedMonth) }
                         )
+                    }
+                } else {
+                    // 顯示預約卡片給所有人
+                    ReservationStatusCard(
+                        group = currentGroup,
+                        isScheduler = isScheduler,
+                        onToggleReservation = {
+                            viewModel.toggleReservation(currentGroup.reservationMonth ?: selectedMonth, currentGroup.reservationStatus)
+                        },
+                        onNavigateToReservation = {
+                            onNavigateToReservation(viewModel.currentOrgId, viewModel.currentGroupId, currentGroup.reservationMonth!!)
+                        }
+                    )
+                }
 
-                        OutlinedButton(
-                            onClick = { showMonthPicker = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.CalendarMonth, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("選擇月份: ${DateUtils.getDisplayMonth(selectedMonth)}")
-                        }
-                        OutlinedButton(
-                            onClick = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Palette, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("班別設定")
-                        }
-                        OutlinedButton(
-                            onClick = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Rule, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("規則設定")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.People, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("人力規劃儀表板")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("手動排班")
-                        }
-                        Button(
-                            onClick = { viewModel.generateSmartSchedule(selectedMonth) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isGenerating
-                        ) {
-                            if (isGenerating) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("生成中...")
-                            } else {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("開始智慧排班")
-                            }
-                        }
+                if (isScheduler && currentGroup.reservationStatus == "inactive") {
+                    Button(onClick = { viewModel.toggleReservation(selectedMonth, "inactive") }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.EventAvailable, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("啟動 ${DateUtils.getDisplayMonth(selectedMonth)} 預約")
                     }
                 }
             }
@@ -577,6 +532,155 @@ fun SchedulerStatusCard(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("認領排班權")
                     }
+                }
+            }
+        }
+    }
+}
+/**
+ * 預約狀態卡片
+ */
+@Composable
+fun ReservationStatusCard(
+    group: stevedaydream.scheduler.data.model.Group,
+    isScheduler: Boolean,
+    onToggleReservation: () -> Unit,
+    onNavigateToReservation: () -> Unit
+) {
+    val statusText = when (group.reservationStatus) {
+        "active" -> "預約進行中"
+        "closed" -> "預約已關閉"
+        else -> "未知狀態"
+    }
+    val buttonText = when (group.reservationStatus) {
+        "active" -> "關閉預約"
+        "closed" -> "重新開啟"
+        else -> "管理預約"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "${DateUtils.getDisplayMonth(group.reservationMonth ?: "")} 班表預約",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+
+            if (group.reservationStatus == "active") {
+                Button(onClick = onNavigateToReservation, modifier = Modifier.fillMaxWidth()) {
+                    Text("前往預約")
+                }
+            }
+
+            if (isScheduler) {
+                OutlinedButton(onClick = onToggleReservation, modifier = Modifier.fillMaxWidth()) {
+                    Text(buttonText)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 將原有的排班功能區塊獨立成一個 Composable
+ */
+@Composable
+private fun SchedulerFunctionCard(
+    isGenerating: Boolean,
+    selectedMonth: String,
+    onShowMonthPicker: () -> Unit,
+    onNavigateToShiftTypeSettings: () -> Unit,
+    onNavigateToRules: () -> Unit,
+    onNavigateToManpower: () -> Unit,
+    onNavigateToManualSchedule: () -> Unit,
+    onGenerate: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "排班功能",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            OutlinedButton(
+                onClick = onShowMonthPicker,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("選擇月份: ${DateUtils.getDisplayMonth(selectedMonth)}")
+            }
+            OutlinedButton(
+                onClick = onNavigateToShiftTypeSettings,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Palette, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("班別設定")
+            }
+            OutlinedButton(
+                onClick = onNavigateToRules,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Rule, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("規則設定")
+            }
+            OutlinedButton(
+                onClick = onNavigateToManpower,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.People, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("人力規劃儀表板")
+            }
+            OutlinedButton(
+                onClick = onNavigateToManualSchedule,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("手動排班")
+            }
+            Button(
+                onClick = onGenerate,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isGenerating
+            ) {
+                if (isGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("生成中...")
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("開始智慧排班")
                 }
             }
         }

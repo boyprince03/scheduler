@@ -24,12 +24,17 @@ import stevedaydream.scheduler.presentation.user.UserProfileScreen
 import stevedaydream.scheduler.presentation.user.BasicInfoScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import stevedaydream.scheduler.presentation.schedule.ShiftReservationScreen
+
 sealed class Screen(val route: String) {
     object Login : Screen("login")
     object BasicInfo : Screen("basic_info")
     object OrganizationList : Screen("organization_list")
     object GroupList : Screen("group_list/{orgId}") {
         fun createRoute(orgId: String) = "group_list/$orgId"
+    }
+    object ShiftReservation : Screen("shift_reservation/{orgId}/{groupId}/{month}") {
+        fun createRoute(orgId: String, groupId: String, month: String) = "shift_reservation/$orgId/$groupId/$month"
     }
     object MemberList : Screen("member_list/{orgId}") {
         fun createRoute(orgId: String) = "member_list/$orgId"
@@ -211,7 +216,16 @@ fun NavigationGraph(
                 },
                 onNavigateToShiftTypeSettings = { org, group ->
                     navController.navigate(Screen.ShiftTypeSettings.createRoute(org, group))
+                },
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點：補上 onNavigateToReservation 參數 ▼▼▼▼▼▼▼▼▼▼▼▼
+                onNavigateToReservation = { org, group, month ->
+                    navController.navigate(Screen.ShiftReservation.createRoute(org, group, month))
                 }
+            )
+        }
+        composable(Screen.ShiftReservation.route) { backStackEntry ->
+            ShiftReservationScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
         composable(Screen.ShiftTypeSettings.route) { backStackEntry ->

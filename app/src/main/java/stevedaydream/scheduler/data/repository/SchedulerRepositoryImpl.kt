@@ -238,6 +238,10 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.updateGroup(orgId, groupId, updates)
     }
 
+    override suspend fun updateReservationStatus(orgId: String, groupId: String, month: String, status: String): Result<Unit> {
+        return remoteDataSource.updateReservationStatus(orgId, groupId, month, status)
+    }
+
     override fun observeGroups(orgId: String): Flow<List<Group>> {
         // 啟動同步監聽
         externalScope.launch {
@@ -254,6 +258,17 @@ class SchedulerRepositoryImpl @Inject constructor(
     override fun observeGroup(groupId: String): Flow<Group?> {
         return database.groupDao().getGroup(groupId)
     }
+
+    // ==================== 預約班表 ====================
+    override fun observeReservations(orgId: String, groupId: String, month: String): Flow<List<Reservation>> {
+        // 預約資料通常需要即時性，因此直接從遠端觀察
+        return remoteDataSource.observeReservations(orgId, groupId, month)
+    }
+
+    override suspend fun saveReservation(orgId: String, reservation: Reservation): Result<Unit> {
+        return remoteDataSource.saveReservation(orgId, reservation)
+    }
+
     // ==================== 組別加入申請 ====================
     override suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> {
         return remoteDataSource.createGroupJoinRequest(orgId, request)

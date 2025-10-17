@@ -551,6 +551,16 @@ class FirebaseDataSource @Inject constructor(
             .update(updates)
             .await()
     }
+    suspend fun updateReservationStatus(orgId: String, groupId: String, month: String, status: String): Result<Unit> = runCatching {
+        val updates = mapOf(
+            "reservationStatus" to status,
+            "reservationMonth" to if (status == "inactive") FieldValue.delete() else month
+        )
+        firestore.collection("organizations/$orgId/groups")
+            .document(groupId)
+            .update(updates)
+            .await()
+    }
 
     fun observeGroups(orgId: String): Flow<List<Group>> {
         return firestore.collection("organizations/$orgId/groups")
@@ -560,6 +570,28 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(Group::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
+    }
+    // ==================== 預約班表 ====================
+    fun observeReservations(orgId: String, groupId: String, month: String): Flow<List<Reservation>> {
+        return firestore.collection("organizations/$orgId/reservations")
+            .whereEqualTo("groupId", groupId)
+            .whereEqualTo("month", month)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull {
+                    it.toObject(Reservation::class.java)?.copy(id = it.id)
+                }
+            }
+    }
+
+    suspend fun saveReservation(orgId: String, reservation: Reservation): Result<Unit> = runCatching {
+        val docRef = if (reservation.id.isNotEmpty()) {
+            firestore.collection("organizations/$orgId/reservations").document(reservation.id)
+        } else {
+            firestore.collection("organizations/$orgId/reservations").document()
+        }
+        // 使用 set 搭配 merge a, 確保能同時處理新增和更新
+        docRef.set(reservation.copy(id = docRef.id).toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge()).await()
     }
 
     suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> = runCatching {

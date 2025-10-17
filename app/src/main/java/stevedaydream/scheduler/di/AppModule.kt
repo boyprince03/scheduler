@@ -49,14 +49,15 @@ object AppModule {
     fun provideSchedulerDatabase(
         @ApplicationContext context: Context
     ): SchedulerDatabase {
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改开始 ▼▼▼▼▼▼▼▼▼▼▼▼
         return Room.databaseBuilder(
             context,
             SchedulerDatabase::class.java,
             "scheduler_database"
         )
-            // .fallbackToDestructiveMigration() // This is unsafe for production.
-            // TODO: Add real migration strategies here.
+            .fallbackToDestructiveMigration() // ✅ 允許在遷移失敗時破壞性地重建資料庫
             .build()
+        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改结束 ▲▲▲▲▲▲▲▲▲▲▲▲
     }
 
     @Provides

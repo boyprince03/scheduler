@@ -65,7 +65,11 @@ interface SchedulerRepository {
     fun observeGroupJoinRequestsForOrg(orgId: String): Flow<List<GroupJoinRequest>>
     suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit>
     suspend fun updateUserGroup(orgId: String, userId: String, newGroupId: String, oldGroupId: String?): Result<Unit>
+    suspend fun updateReservationStatus(orgId: String, groupId: String, month: String, status: String): Result<Unit>
 
+    // ==================== 預約班表 ====================
+    fun observeReservations(orgId: String, groupId: String, month: String): Flow<List<Reservation>>
+    suspend fun saveReservation(orgId: String, reservation: Reservation): Result<Unit>
 
     // ==================== 排班者生命週期 ====================
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String): Result<Boolean>
