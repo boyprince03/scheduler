@@ -48,6 +48,7 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        allWarningsAsErrors = false // <--- 檢查或修改這裡
     }
 
     buildFeatures {

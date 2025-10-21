@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
-import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule
+import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule // 保持 import
 import stevedaydream.scheduler.domain.scheduling.RuleEngine
-import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
-import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
+import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule // 保持 import
+import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule // 保持 import
 import stevedaydream.scheduler.util.DateUtils
 import java.util.Date
 import javax.inject.Inject
@@ -39,8 +39,8 @@ data class ShiftReservationUiState(
     val shiftTypes: List<ShiftType> = emptyList(),
     val manpowerPlan: ManpowerPlan? = null,
     val allReservations: List<Reservation> = emptyList(),
+    // myReservation 的 dailyShifts 現在是 Map<String, List<String>>
     val myReservation: Reservation? = null,
-    // 新增：儲存預排輪班資料 Map<UserId, Map<Day, ShiftId>>
     val rotationSchedule: Map<String, Map<String, String>> = emptyMap(),
     val isSaving: Boolean = false,
     val instantConflict: ReservationConflict? = null,
@@ -75,31 +75,29 @@ class ShiftReservationViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
-            // 監聽所有需要的資料流
             combine(
                 repository.observeGroup(groupId).filterNotNull(),
                 repository.observeShiftTypes(orgId, groupId),
-                repository.observeReservations(orgId, groupId, month),
+                repository.observeReservations(orgId, groupId, month), // Reservation 現在有 List<String>
                 repository.getManpowerPlanOnce(orgId, groupId, month).let { flowOf(it) },
-                repository.observeRotationSchedule(orgId, groupId, month) // <<-- 新增觀察 RotationSchedule
-            ) { group, shiftTypes, reservations, plan, rotationSched -> // <<-- 加入 rotationSched
-                // 在 combine 內處理使用者列表的載入
+                repository.observeRotationSchedule(orgId, groupId, month)
+            ) { group, shiftTypes, reservations, plan, rotationSched ->
                 val userIds = group.memberIds
-                // 確保先取得 User 列表再來處理
                 val users = repository.observeUsers(orgId).first().filter { it.id in userIds }
-                // 將所有需要更新的資料包裝起來
                 Triple(Triple(group, shiftTypes, users), reservations, Pair(plan, rotationSched))
             }.collect { (groupData, reservations, planAndRotationData) ->
                 val (_, shiftTypes, users) = groupData
-                val (plan, rotationSched) = planAndRotationData // <<-- 解開 plan 和 rotationSched
+                val (plan, rotationSched) = planAndRotationData
                 val currentUser = users.find { it.id == auth.currentUser?.uid }
+                // 處理 myReservation，確保 dailyShifts 是 Map<String, List<String>>
                 val myReservation = reservations.find { it.userId == auth.currentUser?.uid }
-                    ?: Reservation(
+                    ?: Reservation( // 新建時 dailyShifts 也是 Map<String, List<String>>
                         orgId = orgId,
                         groupId = groupId,
                         month = month,
                         userId = currentUser?.id ?: "",
-                        userName = currentUser?.name ?: ""
+                        userName = currentUser?.name ?: "",
+                        dailyShifts = emptyMap() // 初始為空 Map
                     )
 
                 _uiState.update {
@@ -110,52 +108,72 @@ class ShiftReservationViewModel @Inject constructor(
                         manpowerPlan = plan,
                         allReservations = reservations,
                         myReservation = myReservation,
-                        rotationSchedule = rotationSched // <<-- 更新 rotationSchedule 狀態
+                        rotationSchedule = rotationSched
                     )
                 }
             }
         }
     }
 
-    // onCellClicked 修改：檢查是否為預排班
+    /**
+     * 修改 onCellClicked 邏輯以處理偏好列表 (簡化版)
+     */
     fun onCellClicked(day: String, shiftId: String) {
         val currentMyReservation = _uiState.value.myReservation ?: return
         val rotationShift = _uiState.value.rotationSchedule[currentMyReservation.userId]?.get(day)
 
         // 如果點擊的格子是系統預排的輪班，則不允許修改
         if (rotationShift != null) {
-            // 可以考慮發出提示訊息，告知使用者此為預排班
             return
         }
 
-        // --- 以下邏輯與之前相同 ---
+        val offShift = _uiState.value.shiftTypes.find { it.shortCode == "OFF" }
         val updatedShifts = currentMyReservation.dailyShifts.toMutableMap()
-        if (updatedShifts[day] == shiftId) {
+        val currentPreferences = updatedShifts[day] ?: emptyList()
+
+        // 簡化邏輯：點擊不同班別則替換，點擊相同班別則取消
+        if (currentPreferences.firstOrNull() == shiftId) {
+            // 如果點擊的是目前唯一的偏好，則移除偏好
             updatedShifts.remove(day)
         } else {
-            updatedShifts[day] = shiftId
+            // 否則，將偏好列表設為只包含點擊的班別
+            updatedShifts[day] = listOf(shiftId)
         }
+
         val updatedReservation = currentMyReservation.copy(dailyShifts = updatedShifts)
         _uiState.update { it.copy(myReservation = updatedReservation) }
+
+        // 即時衝突檢查仍然基於單一班別的可能性
         checkForInstantConflict(day, shiftId)
     }
 
-    // checkForInstantConflict 保持不變
-    private fun checkForInstantConflict(day: String, shiftId: String) {
+
+    // checkForInstantConflict: 邏輯不變，檢查的是單一班別的人力
+    private fun checkForInstantConflict(day: String, shiftIdToCheck: String) {
         val plan = _uiState.value.manpowerPlan ?: return
-        val allReservations = _uiState.value.allReservations // 只考慮使用者預約
+        // 注意：allReservations 裡面的 dailyShifts 也是 Map<String, List<String>>
+        // 但檢查人力時，我們只關心這個班別是否出現在偏好中 (假設只預約一種)
+        val allReservations = _uiState.value.allReservations
         val shiftTypes = _uiState.value.shiftTypes
 
-        // 檢查人力配置 (只計算使用者預約的部分)
-        val requiredCount = plan.dailyRequirements[day]?.requirements?.get(shiftId) ?: 0
-        val reservedCount = allReservations.count { it.dailyShifts[day] == shiftId }
-        val myCurrentShift = _uiState.value.myReservation?.dailyShifts?.get(day)
-        val finalReservedCount = if (myCurrentShift == shiftId) reservedCount + 1 else reservedCount // 計算如果我預約下去的總數
+        // 檢查人力配置
+        val requiredCount = plan.dailyRequirements[day]?.requirements?.get(shiftIdToCheck) ?: 0
+        // 計算有多少人的偏好列表包含 shiftIdToCheck (簡化：只看第一個)
+        val reservedCount = allReservations.count {
+            it.dailyShifts[day]?.firstOrNull() == shiftIdToCheck
+        }
+
+        val myCurrentPref = _uiState.value.myReservation?.dailyShifts?.get(day)?.firstOrNull()
+        val finalReservedCount = when {
+            myCurrentPref != shiftIdToCheck && updatedShifts[day]?.firstOrNull() == shiftIdToCheck -> reservedCount + 1 // 原本不是，改成是
+            myCurrentPref == shiftIdToCheck && updatedShifts[day]?.firstOrNull() != shiftIdToCheck -> reservedCount - 1 // 原本是，改成不是
+            else -> reservedCount // 沒變或原本就不是
+        }
 
         if (finalReservedCount > requiredCount) {
-            val shiftName = shiftTypes.find { it.id == shiftId }?.name ?: "該班別"
+            val shiftName = shiftTypes.find { it.id == shiftIdToCheck }?.name ?: "該班別"
             _uiState.update {
-                it.copy(instantConflict = ReservationConflict(day, "提醒：${shiftName}預約人數已達 ${finalReservedCount} 人，超過人力規劃的 ${requiredCount} 人。"))
+                it.copy(instantConflict = ReservationConflict(day, "提醒：${shiftName}預約人數可能達到 ${finalReservedCount} 人，超過人力規劃的 ${requiredCount} 人。"))
             }
             return
         }
@@ -168,7 +186,7 @@ class ShiftReservationViewModel @Inject constructor(
         _uiState.update { it.copy(instantConflict = null) }
     }
 
-    // saveReservation 保持不變
+    // saveReservation: 不需修改，Firestore 會處理 List<String>
     fun saveReservation() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
@@ -176,13 +194,14 @@ class ShiftReservationViewModel @Inject constructor(
             repository.saveReservation(orgId, reservationToSave).onSuccess {
                 performFinalConflictAnalysis()
             }.onFailure {
-                _uiState.update { it.copy(isSaving = false) }
+                _uiState.update { it.copy(isSaving = false) } // 儲存失敗也要結束 Saving 狀態
             }
         }
     }
 
-    // performFinalConflictAnalysis 保持不變 (只分析使用者預約)
+    // performFinalConflictAnalysis: 分析的是最終 Assignment (Map<String, String>)，邏輯不變
     private suspend fun performFinalConflictAnalysis() {
+        // ... (這部分邏輯不變，因為分析的是 Assignment 而不是 Reservation) ...
         val latestReservations = repository.observeReservations(orgId, groupId, month).first()
         val plan = _uiState.value.manpowerPlan
         val rules = repository.observeSchedulingRules(orgId, groupId).first().filter { it.isEnabled }
@@ -196,11 +215,13 @@ class ShiftReservationViewModel @Inject constructor(
         if (plan != null) {
             plan.dailyRequirements.forEach { (day, dailyReq) ->
                 dailyReq.requirements.forEach { (shiftId, requiredCount) ->
-                    val reservedCount = latestReservations.count { it.dailyShifts[day] == shiftId }
+                    // 這裡仍然需要根據 reservation 的數據來預估衝突
+                    // (假設使用者預約的第一個班別就是他最想要的)
+                    val reservedCount = latestReservations.count { it.dailyShifts[day]?.firstOrNull() == shiftId }
                     if (reservedCount > requiredCount) {
                         val shiftName = shiftTypes.find { it.id == shiftId }?.name ?: ""
                         val conflictingUsers = latestReservations
-                            .filter { it.dailyShifts[day] == shiftId }
+                            .filter { it.dailyShifts[day]?.firstOrNull() == shiftId }
                             .map { it.userName }
                         manpowerViolations.add("${month}-${day} 的 ${shiftName} 超出 ${reservedCount - requiredCount} 人力。")
                         usersToCoordinate.addAll(conflictingUsers)
@@ -209,18 +230,24 @@ class ShiftReservationViewModel @Inject constructor(
             }
         }
 
+        // 規則衝突分析也應該基於可能的排班結果，預約只是輸入之一
+        // 這裡的簡易分析可能不完全準確，因為最終排班還會考慮其他因素
         latestReservations.forEach { reservation ->
             val user = users.find { it.id == reservation.userId }
             if (user != null) {
-                // 注意：這裡只驗證了使用者自己預約的部分，沒有考慮 rotationSchedule
-                val assignment = Assignment(dailyShifts = reservation.dailyShifts)
-                val violations = ruleEngine.validate(user, assignment, shiftTypes, rules)
-                if (violations.isNotEmpty()) {
-                    ruleViolations.addAll(violations.map { it.message })
-                    usersToCoordinate.add(user.name)
+                // 創建一個基於預約第一偏好的假 Assignment 進行檢查
+                val tempDailyShifts = reservation.dailyShifts.mapValues { it.value.firstOrNull() ?: "" }.filterValues { it.isNotEmpty() }
+                if (tempDailyShifts.isNotEmpty()) {
+                    val assignment = Assignment(dailyShifts = tempDailyShifts)
+                    val violations = ruleEngine.validate(user, assignment, shiftTypes, rules)
+                    if (violations.isNotEmpty()) {
+                        ruleViolations.addAll(violations.map { it.message })
+                        usersToCoordinate.add(user.name)
+                    }
                 }
             }
         }
+
 
         _uiState.update {
             it.copy(
@@ -238,5 +265,10 @@ class ShiftReservationViewModel @Inject constructor(
     fun dismissSummaryDialog() {
         _uiState.update { it.copy(saveSummary = null) }
     }
+
+    // Helper: Get updated shifts map (used internally by checkForInstantConflict)
+    private val updatedShifts: Map<String, List<String>>
+        get() = _uiState.value.myReservation?.dailyShifts ?: emptyMap()
+
 }
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

@@ -17,15 +17,17 @@ import java.util.Locale
 import javax.inject.Inject
 
 /**
- * ✅ 新增：用於存放班表統計數據的資料類別
+ * ✅ 修改：加入個人班別統計和日均夜班數
  */
 data class ScheduleStatistics(
     val targetOffDays: Int = 0,
     val actualOffDays: Int = 0,
     val totalDutyDays: Int = 0,
     val averageDailyManpower: Float = 0f,
+    val averageNightShiftsPerUser: Float = 0f, // 新增：日均夜班數
     val currentUserWorkHours: Float = 0f,
     val currentUserOffDays: Int = 0,
+    val userShiftCounts: Map<String, Map<String, Int>> = emptyMap() // Map<UserId, Map<ShiftName, Count>>
 )
 
 data class ScheduleDetailUiState(
@@ -36,7 +38,7 @@ data class ScheduleDetailUiState(
     val shiftTypes: List<ShiftType> = emptyList(),
     val manpowerPlan: ManpowerPlan? = null,
     val enabledRules: List<SchedulingRule> = emptyList(),
-    val statistics: ScheduleStatistics = ScheduleStatistics() // ✅ 新增：統計物件
+    val statistics: ScheduleStatistics = ScheduleStatistics() // ✅ 統計物件
 )
 
 @HiltViewModel
@@ -76,7 +78,9 @@ class ScheduleDetailViewModel @Inject constructor(
                     repository.observeShiftTypes(orgId, groupId),
                     repository.observeGroup(groupId).filterNotNull().flatMapLatest { group ->
                         repository.observeUsers(orgId).map { allUsers ->
+                            // 保持原始順序或按名稱排序，以便與 ScheduleDetailTable 一致
                             allUsers.filter { it.id in group.memberIds }
+                                .sortedBy { it.name } // 確保與表格顯示順序一致
                         }
                     },
                     repository.observeSchedulingRules(orgId, groupId)
@@ -91,7 +95,7 @@ class ScheduleDetailViewModel @Inject constructor(
                             manpowerPlan = manpowerPlan,
                             assignments = assignments,
                             shiftTypes = shiftTypes,
-                            users = users,
+                            users = users, // 使用排序後的使用者列表
                             enabledRules = allRules.filter { rule -> rule.isEnabled },
                             statistics = stats // ✅ 更新統計數據
                         )
@@ -106,7 +110,7 @@ class ScheduleDetailViewModel @Inject constructor(
     }
 
     /**
-     * ✅ 新增：核心統計計算函式
+     * ✅ 修改：核心統計計算函式，加入個人班別統計和日均夜班數計算
      */
     private fun calculateStatistics(
         plan: ManpowerPlan?,
@@ -123,7 +127,9 @@ class ScheduleDetailViewModel @Inject constructor(
         val daysInMonth = DateUtils.getDaysInMonth(month)
         val totalManDays = users.size * daysInMonth
         val shiftTypeMap = shiftTypes.associateBy { it.id }
+        val shiftNameMap = shiftTypes.associate { it.id to it.name } // Map<ShiftId, ShiftName>
         val offShiftId = shiftTypes.find { it.shortCode == "OFF" }?.id
+        val nightShiftId = shiftTypes.find { it.name == "值班(夜)" }?.id // 找到夜班 ID
         val dutyShiftNames = setOf("值班(日)", "值班(夜)")
 
         // 計算總目標休假天數
@@ -132,13 +138,28 @@ class ScheduleDetailViewModel @Inject constructor(
         }
         val targetOffDays = totalManDays - totalRequiredManpower
 
-        // 計算實際班表數據
+        // 計算實際班表數據 & 個人班別統計
         var actualOffDays = 0
         var totalDutyDays = 0
+        var totalNightShifts = 0 // 新增：計算總夜班數
+        val userShiftCounts = mutableMapOf<String, MutableMap<String, Int>>() // Map<UserId, Map<ShiftName, Count>>
+        users.forEach { userShiftCounts[it.id] = mutableMapOf() } // 初始化
+
         assignments.forEach { assignment ->
             assignment.dailyShifts.values.forEach { shiftId ->
+                val shiftName = shiftNameMap[shiftId] ?: "未知"
+
+                // 累加個人班別統計
+                userShiftCounts[assignment.userId]?.let { counts ->
+                    counts[shiftName] = (counts[shiftName] ?: 0) + 1
+                }
+
+                // 累加全體統計
                 if (shiftId == offShiftId) {
                     actualOffDays++
+                }
+                if (shiftId == nightShiftId) { // 如果是夜班，累加總夜班數
+                    totalNightShifts++
                 }
                 shiftTypeMap[shiftId]?.let {
                     if (it.name in dutyShiftNames) {
@@ -149,6 +170,9 @@ class ScheduleDetailViewModel @Inject constructor(
         }
 
         val averageDailyManpower = (totalManDays - actualOffDays).toFloat() / daysInMonth
+        // 計算日均夜班數 (總夜班數 / 人數)
+        val averageNightShiftsPerUser = if (users.isNotEmpty()) totalNightShifts.toFloat() / users.size else 0f
+
 
         // 計算個人數據
         var currentUserWorkHours = 0f
@@ -170,13 +194,15 @@ class ScheduleDetailViewModel @Inject constructor(
             actualOffDays = actualOffDays,
             totalDutyDays = totalDutyDays,
             averageDailyManpower = averageDailyManpower,
+            averageNightShiftsPerUser = averageNightShiftsPerUser, // 加入計算結果
             currentUserWorkHours = currentUserWorkHours,
-            currentUserOffDays = currentUserOffDays
+            currentUserOffDays = currentUserOffDays,
+            userShiftCounts = userShiftCounts // 加入個人統計結果
         )
     }
 
     /**
-     * ✅ 新增：計算班別時長的輔助函式 (處理跨日)
+     * ✅ 計算班別時長的輔助函式 (處理跨日) - 保持不變
      */
     private fun getShiftDuration(shiftType: ShiftType?): Float {
         if (shiftType == null) return 0f

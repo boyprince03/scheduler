@@ -162,9 +162,8 @@ class FirebaseDataSource @Inject constructor(
             }
         }
         // 刪除 org 層級的 reservations
-        val reservations = firestore.collection("organizations/$orgId/reservations").get().await()
-        reservations.documents.forEach { batch.delete(it.reference) }
-
+        val reservations = firestore.collection("organizations/$orgId/reservations").get().await() // Line 1005 (approx)
+        reservations.documents.forEach { batch.delete(it.reference) } // Line 1007 (approx)
         batch.delete(orgRef)
         batch.commit().await()
 
@@ -1042,6 +1041,7 @@ class FirebaseDataSource @Inject constructor(
                 snapshot.exists() && snapshot.getString("role") == "superuser"
             }
     }
+
     suspend fun createTestData(dataSet: TestDataGenerator.TestDataSet): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(dataSet.organization.id)
 
@@ -1084,10 +1084,10 @@ class FirebaseDataSource @Inject constructor(
                 val planRef = orgRef.collection("manpowerPlans").document(plan.id)
                 batch.set(planRef, plan.toFirestoreMap())
             }
-            dataSet.reservations.forEach { reservation ->
-                val reservationRef = orgRef.collection("reservations").document(reservation.id)
-                batch.set(reservationRef, reservation.toFirestoreMap())
-            }
+//            dataSet.reservations.forEach { reservation ->
+//                val reservationRef = orgRef.collection("reservations").document(reservation.id)
+//                batch.set(reservationRef, reservation.toFirestoreMap())
+//            }
         }.await()
     }
     suspend fun deleteAllTestData(): Result<Int> = runCatching {

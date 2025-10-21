@@ -8,15 +8,11 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 import java.util.Date
 import androidx.room.TypeConverter
+import com.google.gson.Gson // 需要 Gson 來處理 List<String> 的 Room 轉換 (如果需要)
+import com.google.gson.reflect.TypeToken // 需要 TypeToken
 
 
-// ==================== 組織 ====================
-data class Features(
-    @get:PropertyName("advanced_rules") @set:PropertyName("advanced_rules") var advancedRules: Boolean = false,
-    @get:PropertyName("excel_export") @set:PropertyName("excel_export") var excelExport: Boolean = false,
-    @get:PropertyName("api_access") @set:PropertyName("api_access") var apiAccess: Boolean = false
-)
-
+// ... (Organization, Features, RotationSetting, RotationSettingsContainer 保持不變) ...
 @Entity(tableName = "organizations")
 data class Organization(
     @PrimaryKey val id: String = "",
@@ -53,43 +49,39 @@ data class Organization(
         )
     }
 }
-// ==================== 輪替規則設定 ====================
-// 这个 data class 不直接存入 Room，而是作为 GroupSettings 的一部分或独立存在 Firestore
+data class Features(
+    @get:PropertyName("advanced_rules") @set:PropertyName("advanced_rules") var advancedRules: Boolean = false,
+    @get:PropertyName("excel_export") @set:PropertyName("excel_export") var excelExport: Boolean = false,
+    @get:PropertyName("api_access") @set:PropertyName("api_access") var apiAccess: Boolean = false
+)
+
 data class RotationSetting(
     val daysOfWeek: Set<Int> = emptySet(), // 0=週日, 1=週一...6=週六
-    // val order: String = "ascending", // 暫時只支援升冪
     val nextStartIndex: Int = 0 // 下次輪替從 orderedUsers 的哪個索引開始
 ) {
-    // Firestore 需要無參數建構子
     constructor() : this(emptySet(), 0)
 
     fun toFirestoreMap(): Map<String, Any> {
         return mapOf(
-            "daysOfWeek" to daysOfWeek.toList(), // Firestore 不直接支援 Set，存為 List
+            "daysOfWeek" to daysOfWeek.toList(),
             "nextStartIndex" to nextStartIndex
         )
     }
 
     companion object {
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 ▼▼▼▼▼▼▼▼▼▼▼▼
-        // 确保传入的 map 的 value 是非空的 Any
         fun fromFirestoreMap(map: Map<String, Any>): RotationSetting {
-            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             val daysList = (map["daysOfWeek"] as? List<*>)?.mapNotNull { it as? Long } ?: emptyList()
             val nextIndex = (map["nextStartIndex"] as? Long)?.toInt() ?: 0
             return RotationSetting(
-                daysOfWeek = daysList.map { it.toInt() }.toSet(), // 從 List 轉回 Set
+                daysOfWeek = daysList.map { it.toInt() }.toSet(),
                 nextStartIndex = nextIndex
             )
         }
     }
 }
 
-// 用於儲存所有輪替規則的容器，可以存在 Group 文件下或獨立文件
-// 用於儲存所有輪替規則的容器，可以存在 Group 文件下或獨立文件
 data class RotationSettingsContainer(
-    // Map<ShiftTypeId, RotationSetting>
-    val rules: Map<String, RotationSetting> = emptyMap()
+    val rules: Map<String, RotationSetting> = emptyMap() // Map<ShiftTypeId, RotationSetting>
 ) {
     fun toFirestoreMap(): Map<String, Any> {
         return mapOf(
@@ -101,13 +93,10 @@ data class RotationSettingsContainer(
             val rulesMapData = map["rules"] as? Map<*, *> ?: emptyMap<Any,Any>()
             val rules = rulesMapData.mapNotNull { (key, value) ->
                 if (key is String && value is Map<*, *>) {
-                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 ▼▼▼▼▼▼▼▼▼▼▼▼
-                    // 安全地轉換 Map<*, *> 為 Map<String, Any>，过滤掉 value 为 null 的情况
                     val settingMap = value.mapNotNull { (k, v) ->
-                        if (k is String && v != null) k to v else null // 确保 v 不为 null
-                    }.toMap() // settingMap 现在是 Map<String, Any>
-                    key to RotationSetting.fromFirestoreMap(settingMap) // 传入 Map<String, Any>
-                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+                        if (k is String && v != null) k to v else null
+                    }.toMap()
+                    key to RotationSetting.fromFirestoreMap(settingMap)
                 } else {
                     null
                 }
@@ -117,11 +106,92 @@ data class RotationSettingsContainer(
     }
 }
 
-
-// 在 Converters class 中加入 Set<Int> 的轉換器 (如果需要存 Room 的話，但目前規則存 Firestore)
+// 修改 Converters 以處理 Map<String, List<String>> (使用 Gson)
 class Converters {
-    // ... (其他 TypeConverter 保持不變) ...
+    private val gson = Gson()
 
+    // ... (其他 TypeConverter 保持不變) ...
+    @TypeConverter
+    fun fromTimestamp(value: Long?): Date? {
+        return value?.let { Date(it) }
+    }
+
+    @TypeConverter
+    fun dateToTimestamp(date: Date?): Long? {
+        return date?.time
+    }
+
+    @TypeConverter
+    fun fromStringList(value: List<String>): String {
+        return value.joinToString(",")
+    }
+
+    @TypeConverter
+    fun toStringList(value: String): List<String> {
+        return if (value.isEmpty()) emptyList() else value.split(",")
+    }
+
+    // --- 修改 Map<String, String> 的轉換 ---
+    @TypeConverter
+    fun fromStringMap(value: Map<String, String>?): String {
+        return gson.toJson(value ?: emptyMap<String, String>())
+    }
+
+    @TypeConverter
+    fun toStringMap(value: String): Map<String, String> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, String>>() {}.type
+        return gson.fromJson(value, type)
+    }
+    // --- 新增 Map<String, List<String>> 的轉換 ---
+    @TypeConverter
+    fun fromStringListMap(value: Map<String, List<String>>?): String {
+        return gson.toJson(value ?: emptyMap<String, List<String>>())
+    }
+
+    @TypeConverter
+    fun toStringListMap(value: String): Map<String, List<String>> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, List<String>>>() {}.type
+        return gson.fromJson(value, type) ?: emptyMap() // 添加 null 檢查
+    }
+    // --- 保持 AnyMap 的轉換 ---
+    @TypeConverter
+    fun fromAnyMap(value: Map<String, Any>): String {
+        return gson.toJson(value)
+    }
+
+    @TypeConverter
+    fun toAnyMap(value: String): Map<String, Any> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        return gson.fromJson(value, type)
+    }
+    // --- 保持 DailyRequirementMap 的轉換 ---
+    @TypeConverter
+    fun fromDailyRequirementMap(value: Map<String, DailyRequirement>?): String {
+        return gson.toJson(value ?: emptyMap<String, DailyRequirement>())
+    }
+
+    @TypeConverter
+    fun toDailyRequirementMap(value: String): Map<String, DailyRequirement> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, DailyRequirement>>() {}.type
+        return gson.fromJson(value, type)
+    }
+    // --- 保持 IntMap 的轉換 ---
+    @TypeConverter
+    fun fromIntMap(value: Map<String, Int>?): String {
+        return gson.toJson(value ?: emptyMap<String, Int>())
+    }
+
+    @TypeConverter
+    fun toIntMap(value: String): Map<String, Int> {
+        if (value.isEmpty()) return emptyMap()
+        val type = object : TypeToken<Map<String, Int>>() {}.type
+        return gson.fromJson(value, type)
+    }
+    // --- 保持 IntSet 的轉換 ---
     @TypeConverter
     fun fromIntSet(value: Set<Int>?): String {
         return value?.joinToString(",") ?: ""
@@ -138,7 +208,8 @@ class Converters {
     }
 }
 
-// ==================== 使用者 ====================
+
+// ... (User, Group, GroupJoinRequest, ShiftType, Request 保持不變) ...
 @Entity(tableName = "users")
 data class User(
     @PrimaryKey val id: String = "",
@@ -162,8 +233,6 @@ data class User(
         "employmentStatus" to employmentStatus
     )
 }
-
-// ==================== 群組 ====================
 @Entity(tableName = "groups")
 data class Group(
     @PrimaryKey val id: String = "",
@@ -175,9 +244,7 @@ data class Group(
     val schedulerLeaseExpiresAt: Date? = null,
     val reservationStatus: String = "inactive", // "inactive", "active", "closed"
     val reservationMonth: String? = null,
-    // 新增：用於醫院策略的使用者排序列表 (儲存 User ID)
     val userOrder: List<String>? = null,
-    // 新增：用於輪替的狀態 (Map<ShiftTypeId, nextUserIndex>)
     val rotationState: Map<String, Int>? = null
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
@@ -188,8 +255,8 @@ data class Group(
         schedulerLeaseExpiresAt?.let { put("schedulerLeaseExpiresAt", it) }
         put("reservationStatus", reservationStatus)
         reservationMonth?.let { put("reservationMonth", it) }
-        userOrder?.let { put("userOrder", it) } // 新增
-        rotationState?.let { put("rotationState", it) } // 新增
+        userOrder?.let { put("userOrder", it) }
+        rotationState?.let { put("rotationState", it) }
     }
 
     fun isSchedulerActive(): Boolean {
@@ -197,8 +264,6 @@ data class Group(
         return Date().before(expiresAt)
     }
 }
-
-// ==================== 組別加入申請 ====================
 @Entity(tableName = "group_join_requests")
 data class GroupJoinRequest(
     @PrimaryKey val id: String = "",
@@ -220,8 +285,6 @@ data class GroupJoinRequest(
         "requestedAt" to requestedAt
     )
 }
-
-// ==================== 班別類型 ====================
 @Entity(tableName = "shift_types")
 data class ShiftType(
     @PrimaryKey val id: String = "",
@@ -250,8 +313,6 @@ data class ShiftType(
         createdBy?.let { put("createdBy", it) }
     }
 }
-
-// ==================== 請求 ====================
 @Entity(tableName = "requests")
 data class Request(
     @PrimaryKey val id: String = "",
@@ -275,7 +336,8 @@ data class Request(
     )
 }
 
-// ==================== 預約班表 ====================
+
+// ==================== 預約班表 (修改) ====================
 @Entity(tableName = "reservations")
 data class Reservation(
     @PrimaryKey val id: String = "",
@@ -284,8 +346,11 @@ data class Reservation(
     val month: String = "",
     val userId: String = "",
     val userName: String = "",
-    // Map<"day", "shiftId">, e.g., "01" -> "shift_id_123"
-    val dailyShifts: Map<String, String> = emptyMap(),
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 ▼▼▼▼▼▼▼▼▼▼▼▼
+    // Map<"day", List<"shiftId">>, e.g., "01" -> ["off", "shift_s", "shift_d"]
+    // 列表中的順序代表偏好順序
+    val dailyShifts: Map<String, List<String>> = emptyMap(),
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     val updatedAt: Date = Date()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
@@ -294,11 +359,12 @@ data class Reservation(
         "month" to month,
         "userId" to userId,
         "userName" to userName,
-        "dailyShifts" to dailyShifts,
+        "dailyShifts" to dailyShifts, // Firestore 原生支援 List<String>
         "updatedAt" to updatedAt
     )
 }
-// ==================== 排班規則 ====================
+
+// ... (SchedulingRule, ManpowerPlan, RequirementDefaults, DailyRequirement, Schedule, Assignment 保持不變) ...
 @Entity(tableName = "scheduling_rules")
 data class SchedulingRule(
     @PrimaryKey val id: String = "",
@@ -330,8 +396,6 @@ data class SchedulingRule(
         groupId?.let { put("groupId", it) }
     }
 }
-
-// ==================== 人力規劃 ====================
 data class RequirementDefaults(
     val weekday: Map<String, Int> = emptyMap(),
     val saturday: Map<String, Int> = emptyMap(),
@@ -379,8 +443,6 @@ data class DailyRequirement(
         put("requirements", requirements)
     }
 }
-
-// ==================== 班表 ====================
 @Entity(tableName = "schedules")
 data class Schedule(
     @PrimaryKey val id: String = "",
@@ -391,11 +453,8 @@ data class Schedule(
     val generatedAt: Date = Date(),
     val totalScore: Int = 0,
     val violatedRules: List<String> = emptyList(),
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-    val generationMethod: String = "smart" // "smart" 或 "manual"
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+    val generationMethod: String = "smart"
 ) {
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     fun toFirestoreMap(): Map<String, Any> = mapOf(
         "groupId" to groupId,
         "month" to month,
@@ -405,10 +464,7 @@ data class Schedule(
         "violatedRules" to violatedRules,
         "generationMethod" to generationMethod
     )
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 }
-
-// ==================== 班表分配 ====================
 @Entity(tableName = "assignments")
 data class Assignment(
     @PrimaryKey val id: String = "",
@@ -418,7 +474,7 @@ data class Assignment(
     val dailyShifts: Map<String, String> = emptyMap()
 ) {
     fun toFirestoreMap(): Map<String, Any> = mapOf(
-        "userId" to userId, // ✅ 新增，這是最重要的欄位
+        "userId" to userId,
         "userName" to userName,
         "dailyShifts" to dailyShifts
     )

@@ -1,4 +1,5 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// scheduler/presentation/admin/AdminScreen.kt
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改 Divider -> HorizontalDivider ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.admin
 
 import androidx.compose.foundation.clickable
@@ -6,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,9 +18,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.flow.collectLatest
+import stevedaydream.scheduler.data.model.Group // 引入 Group
 import stevedaydream.scheduler.data.model.Organization
 import stevedaydream.scheduler.presentation.common.ConfirmDialog
-import stevedaydream.scheduler.presentation.common.DividerWithText
+import stevedaydream.scheduler.presentation.common.DividerWithText // Assuming this uses HorizontalDivider internally or is updated
 import stevedaydream.scheduler.util.showToast
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,6 +34,10 @@ fun AdminScreen(
     var showDeleteAllDialog by remember { mutableStateOf(false) } // 新增：控制刪除全部對話框的狀態
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    // 新增：狀態來控制顯示哪個組織的群組選擇菜單
+    var orgForReservationMenu by remember { mutableStateOf<Organization?>(null) }
+    var isGeneratingReservations by remember { mutableStateOf(false) } // 控制按鈕加載狀態
 
     LaunchedEffect(Unit) {
         viewModel.generationState.collectLatest { result ->
@@ -65,11 +72,23 @@ fun AdminScreen(
         }
     }
 
-
     // 監聽單元測試結果
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collect { message ->
             context.showToast(message)
+        }
+    }
+
+    // 新增：監聽預約班表生成結果
+    LaunchedEffect(Unit) {
+        viewModel.reservationGenerationState.collectLatest { result ->
+            isGeneratingReservations = false // 結束加載狀態
+            result.onSuccess { count ->
+                context.showToast("成功為 ${orgForReservationMenu?.orgName} 的指定群組產生 $count 筆預約")
+                orgForReservationMenu = null // 關閉菜單
+            }.onFailure { error ->
+                context.showToast("產生預約失敗: ${error.message}")
+            }
         }
     }
 
@@ -80,7 +99,8 @@ fun AdminScreen(
                 title = { Text("超級管理員儀表板") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        // ✅ 使用 AutoMirrored 圖示 (已在之前修正)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
@@ -118,7 +138,8 @@ fun AdminScreen(
 
 
             item {
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
+                // ✅ 使用 HorizontalDivider
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
             }
 
             item {
@@ -135,7 +156,18 @@ fun AdminScreen(
                 items(uiState.organizationsInfo, key = { it.organization.id }) { orgInfo ->
                     OrganizationManagementCard(
                         organizationInfo = orgInfo,
-                        onDeleteClick = { orgToDelete = orgInfo.organization }
+                        isGeneratingReservations = isGeneratingReservations && orgForReservationMenu?.id == orgInfo.organization.id,
+                        onDeleteClick = { orgToDelete = orgInfo.organization },
+                        onGenerateReservationsClick = { orgForReservationMenu = orgInfo.organization },
+                        // 新增回呼，處理群組選擇後的動作
+                        onGroupSelectedForReservation = { org, group ->
+                            isGeneratingReservations = true // 開始加載狀態
+                            viewModel.generateReservationsForGroup(org.id, group.id)
+                        },
+                        // 新增回呼，用於關閉群組選擇菜單
+                        onDismissGroupMenu = { orgForReservationMenu = null },
+                        // 判斷是否顯示此組織的群組菜單
+                        showGroupMenu = orgForReservationMenu?.id == orgInfo.organization.id
                     )
                 }
             }
@@ -174,6 +206,7 @@ fun AdminScreen(
     }
 }
 
+// ... (FullScenarioGenerator 保持不變) ...
 @Composable
 private fun FullScenarioGenerator(
     viewModel: AdminViewModel = hiltViewModel()
@@ -198,7 +231,7 @@ private fun FullScenarioGenerator(
                 style = MaterialTheme.typography.headlineSmall
             )
             Text(
-                "點擊按鈕將會建立一組完整的組織資料，包含人力規劃、預約班表、排班草稿等。",
+                "點擊按鈕將會建立一組完整的組織資料，包含人力規劃、排班草稿等。注意：不再包含預約班表。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -243,6 +276,7 @@ private fun FullScenarioGenerator(
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UnitTestSection(
@@ -269,14 +303,16 @@ private fun UnitTestSection(
             Text("2. 單元測試功能", style = MaterialTheme.typography.headlineSmall)
 
             // 2-1: 生成組織和群組
-            Divider()
+            // ✅ 使用 HorizontalDivider
+            HorizontalDivider()
             Text("2-1: 生成組織和群組", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = newOrgName, onValueChange = { newOrgName = it }, label = { Text("組織名稱") })
             OutlinedTextField(value = newGroupName, onValueChange = { newGroupName = it }, label = { Text("群組名稱") })
             Button(onClick = { onGenerateOrgAndGroup(newOrgName, newGroupName) }) { Text("執行 2-1") }
 
             // 2-2: 生成使用者
-            Divider()
+            // ✅ 使用 HorizontalDivider
+            HorizontalDivider()
             Text("2-2: 生成使用者並指派", style = MaterialTheme.typography.titleMedium)
             ExposedDropdownMenuBox(expanded = isOrgDropdownExpanded, onExpandedChange = { isOrgDropdownExpanded = !isOrgDropdownExpanded }) {
                 OutlinedTextField(
@@ -321,7 +357,8 @@ private fun UnitTestSection(
             }, enabled = selectedOrg != null) { Text("執行 2-2") }
 
             // 2-3: 指定預假
-            Divider()
+            // ✅ 使用 HorizontalDivider
+            HorizontalDivider()
             Text("2-3: 為群組內人員指定預假", style = MaterialTheme.typography.titleMedium)
             Text("為「${selectedOrg?.organization?.orgName ?: "所選組織"}」的所有群組成員隨機預約 5 天假。", style = MaterialTheme.typography.bodySmall)
             Button(onClick = {
@@ -331,40 +368,88 @@ private fun UnitTestSection(
     }
 }
 
+// ... (OrganizationManagementCard 保持不變) ...
 @Composable
 private fun OrganizationManagementCard(
     organizationInfo: OrganizationAdminInfo,
-    onDeleteClick: () -> Unit
+    isGeneratingReservations: Boolean,
+    onDeleteClick: () -> Unit,
+    onGenerateReservationsClick: () -> Unit, // 按鈕點擊，顯示菜單
+    onGroupSelectedForReservation: (Organization, Group) -> Unit, // 選擇群組後的回呼
+    onDismissGroupMenu: () -> Unit, // 關閉菜單的回呼
+    showGroupMenu: Boolean // 是否顯示此組織的群組菜單
 ) {
     val organization = organizationInfo.organization
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(organization.orgName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "成員數: ${organizationInfo.memberCount}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    "ID: ${organization.id}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        Column { // 改用 Column 包裹，方便加入按鈕
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(organization.orgName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "成員數: ${organizationInfo.memberCount}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "ID: ${organization.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // 保留刪除按鈕
+                IconButton(onClick = onDeleteClick) {
+                    Icon(Icons.Default.Delete, contentDescription = "刪除組織", tint = MaterialTheme.colorScheme.error)
+                }
             }
-            IconButton(onClick = onDeleteClick) {
-                Icon(Icons.Default.Delete, contentDescription = "刪除組織", tint = MaterialTheme.colorScheme.error)
+            // 新增：產生預約班表按鈕和 DropdownMenu
+            Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                OutlinedButton(
+                    onClick = onGenerateReservationsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isGeneratingReservations && organizationInfo.groups.isNotEmpty()
+                ) {
+                    if (isGeneratingReservations) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("產生中...")
+                    } else {
+                        Icon(Icons.Default.EventAvailable, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("產生預約班表")
+                    }
+                }
+                // 下拉選單選擇群組
+                DropdownMenu(
+                    expanded = showGroupMenu,
+                    onDismissRequest = onDismissGroupMenu
+                ) {
+                    if (organizationInfo.groups.isEmpty()) {
+                        DropdownMenuItem(text = { Text("此組織尚無群組") }, onClick = onDismissGroupMenu)
+                    } else {
+                        organizationInfo.groups.forEach { group ->
+                            DropdownMenuItem(
+                                text = { Text(group.groupName) },
+                                onClick = {
+                                    onGroupSelectedForReservation(organization, group)
+                                    // onDismissGroupMenu() // ViewModel 處理成功或失敗後再關閉
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
+
+// ... (DangerZoneCard 保持不變) ...
 @Composable
 private fun DangerZoneCard(onDeleteAllClick: () -> Unit) {
     Card(

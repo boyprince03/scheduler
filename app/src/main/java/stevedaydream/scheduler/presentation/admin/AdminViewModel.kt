@@ -1,5 +1,5 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 // scheduler/presentation/admin/AdminViewModel.kt
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.admin
 
 import androidx.lifecycle.ViewModel
@@ -15,6 +15,7 @@ import stevedaydream.scheduler.data.model.Request
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.util.DateUtils
+import stevedaydream.scheduler.util.TestDataGenerator // 引入 TestDataGenerator
 import java.util.*
 import javax.inject.Inject
 import kotlin.random.Random
@@ -51,6 +52,10 @@ class AdminViewModel @Inject constructor(
     // 新增：用於顯示單元測試結果的 Flow
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage = _toastMessage.asSharedFlow()
+
+    // 新增：用於產生預約班表的 Flow
+    private val _reservationGenerationState = MutableSharedFlow<Result<Int>>() // 回傳產生的數量
+    val reservationGenerationState = _reservationGenerationState.asSharedFlow()
 
 
     init {
@@ -106,6 +111,7 @@ class AdminViewModel @Inject constructor(
                 return@launch
             }
 
+            // 呼叫更新後的 TestDataGenerator
             val result = repository.createTestData(orgName, ownerId, testMemberEmail.trim())
             _generationState.emit(result)
         }
@@ -232,6 +238,50 @@ class AdminViewModel @Inject constructor(
                 }
             }
             _toastMessage.emit("已為 ${usersInGroups.size} 位成員建立共 $requestCount 筆預假")
+        }
+    }
+
+    // --- 新增：產生預約班表 ---
+    fun generateReservationsForGroup(orgId: String, groupId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. 獲取群組成員
+                val group = repository.observeGroup(groupId).firstOrNull()
+                if (group == null || group.memberIds.isEmpty()) {
+                    _reservationGenerationState.emit(Result.failure(Exception("找不到群組或群組無成員")))
+                    return@launch
+                }
+                val users = repository.observeUsers(orgId).first().filter { it.id in group.memberIds }
+                if (users.isEmpty()) {
+                    _reservationGenerationState.emit(Result.failure(Exception("找不到群組成員資料")))
+                    return@launch
+                }
+
+                // 2. 呼叫 TestDataGenerator 產生預約資料
+                val month = DateUtils.getCurrentMonthString()
+                val reservations = TestDataGenerator.generateReservations(orgId, groupId, users, month)
+
+                // 3. 儲存預約資料 (假設 repository 有 saveReservations 批次儲存方法，或逐一儲存)
+                var successCount = 0
+                reservations.forEach { reservation ->
+                    val saveResult = repository.saveReservation(orgId, reservation)
+                    if (saveResult.isSuccess) {
+                        successCount++
+                    } else {
+                        // 可以考慮記錄部分失敗的錯誤
+                        println("儲存預約失敗 for user ${reservation.userId}: ${saveResult.exceptionOrNull()?.message}")
+                    }
+                }
+
+                if (successCount > 0) {
+                    _reservationGenerationState.emit(Result.success(successCount))
+                } else {
+                    _reservationGenerationState.emit(Result.failure(Exception("儲存預約資料失敗")))
+                }
+
+            } catch (e: Exception) {
+                _reservationGenerationState.emit(Result.failure(e))
+            }
         }
     }
 

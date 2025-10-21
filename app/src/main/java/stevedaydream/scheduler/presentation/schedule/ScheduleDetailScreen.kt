@@ -1,8 +1,11 @@
 // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.schedule
 
+// ... (imports 保持不變) ...
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -36,10 +39,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NightsStay // 引入月亮圖示
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import stevedaydream.scheduler.presentation.schedule.ScheduleStatistics
 
+
+// ... (ScheduleDetailScreen, SchedulingRulesCard, RuleInfoRow, StatItem, ShiftLegend 保持不變) ...
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ScheduleDetailScreen(
@@ -92,14 +103,15 @@ fun ScheduleDetailScreen(
                 item {
                     ScheduleDetailTable(
                         month = schedule.month,
-                        users = uiState.users,
+                        users = uiState.users, // 使用 ViewModel 提供的排序後列表
                         shiftTypes = uiState.shiftTypes,
                         assignments = uiState.assignments,
-                        manpowerPlan = uiState.manpowerPlan
+                        manpowerPlan = uiState.manpowerPlan,
+                        userShiftCounts = uiState.statistics.userShiftCounts // 傳入個人統計
                     )
                 }
 
-                // ✅ 修正點：在這裡加入班表數據統計卡片
+                // 班表數據統計卡片 (保持不變)
                 item {
                     ScheduleStatisticsCard(
                         stats = uiState.statistics,
@@ -107,6 +119,7 @@ fun ScheduleDetailScreen(
                     )
                 }
 
+                // 規則顯示卡片 (保持不變)
                 item {
                     SchedulingRulesCard(
                         enabledRules = uiState.enabledRules,
@@ -123,10 +136,6 @@ fun ScheduleDetailScreen(
     }
 }
 
-// ... 其他 Composable 函式 (SchedulingRulesCard, StatItem, ShiftLegend 等) 保持不變 ...
-// (此處省略未變更的程式碼以保持簡潔)
-
-// ✅ 將 AnalysisCard 重新命名並重寫為 SchedulingRulesCard
 @Composable
 fun SchedulingRulesCard(
     enabledRules: List<SchedulingRule>,
@@ -205,8 +214,9 @@ private fun RuleInfoRow(rule: SchedulingRule, isViolated: Boolean) {
 
 
 /**
- * ✅ 新增：班表數據統計卡片
+ * ✅ 修改：班表數據統計卡片，加入日均夜班數
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ScheduleStatisticsCard(
     stats: ScheduleStatistics,
@@ -224,32 +234,45 @@ fun ScheduleStatisticsCard(
             )
             Spacer(Modifier.height(12.dp))
 
-            // 全體統計
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // 全體統計 - 修改 Row 排版以容納更多項目
+            FlowRow( // 使用 FlowRow 自動換行
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally), // 水平間距和居中
+                verticalArrangement = Arrangement.spacedBy(16.dp) // 垂直間距
+            ) {
                 StatItem(
                     icon = Icons.Default.Bedtime,
                     label = "總休假天數",
                     value = "${stats.actualOffDays}",
                     subValue = "(目標: ${stats.targetOffDays})",
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier // 移除 weight
                 )
                 StatItem(
                     icon = Icons.Default.Info,
                     label = "總值班天數",
                     value = "${stats.totalDutyDays}",
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier // 移除 weight
                 )
                 StatItem(
                     icon = Icons.Default.BarChart,
                     label = "日均人力",
                     value = "%.1f".format(stats.averageDailyManpower),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier // 移除 weight
+                )
+                // 新增：顯示日均夜班數
+                StatItem(
+                    icon = Icons.Default.NightsStay, // 月亮圖示
+                    label = "人均夜班數",
+                    value = "%.1f".format(stats.averageNightShiftsPerUser),
+                    subValue = "班/人",
+                    modifier = Modifier // 移除 weight
                 )
             }
 
+
             Divider(modifier = Modifier.padding(vertical = 12.dp))
 
-            // 個人統計
+            // 個人統計 (保持不變)
             Text(
                 "我的本月統計",
                 style = MaterialTheme.typography.titleSmall,
@@ -276,8 +299,9 @@ fun ScheduleStatisticsCard(
     }
 }
 
+
 /**
- * ✅ 新增：單個統計項目的 UI 元件
+ * ✅ 單個統計項目的 UI 元件 - 保持不變
  */
 @Composable
 fun StatItem(
@@ -308,7 +332,6 @@ fun StatItem(
         }
     }
 }
-
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -347,45 +370,44 @@ fun ShiftLegend(
 }
 
 
+// ... (ScheduleDetailTable 保持不變) ...
+@OptIn(ExperimentalLayoutApi::class) // 引入 FlowRow
 @Composable
 fun ScheduleDetailTable(
     month: String,
     users: List<User>,
     shiftTypes: List<ShiftType>,
     assignments: List<Assignment>,
-    manpowerPlan: ManpowerPlan? // ✅ 新增 manpowerPlan 參數
+    manpowerPlan: ManpowerPlan?, // 保持不變
+    userShiftCounts: Map<String, Map<String, Int>> // ✅ 接收個人統計
 ) {
     val dates = DateUtils.getDatesInMonth(month)
     val scrollState = rememberScrollState()
-
     val assignmentMap = assignments.associate { it.userId to it.dailyShifts }
     val shiftTypeMap = shiftTypes.associateBy { it.id }
-
-    // ✅ 建立一個方便查詢的假日地圖
     val holidayMap = remember(manpowerPlan) {
         manpowerPlan?.dailyRequirements?.values
             ?.filter { it.isHoliday }
             ?.associate { it.date to (it.holidayName ?: "假日") }
             ?: emptyMap()
     }
-
+    // ✅ 狀態：追蹤哪些使用者展開了統計
+    var expandedUserIds by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .horizontalScroll(scrollState)
     ) {
-        // 表頭
+        // 表頭 (保持不變)
         Column(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
-            // ✅ 新增：國定假日列
+            // 國定假日列
             Row(modifier = Modifier.height(36.dp)) {
-                Spacer(modifier = Modifier.width(100.dp)) // 對齊姓名欄的寬度
+                Spacer(modifier = Modifier.width(100.dp))
                 dates.forEach { date ->
                     Surface(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .fillMaxHeight(),
-                        color = Color.Transparent, // 背景由外層 Column 控制
+                        modifier = Modifier.width(60.dp).fillMaxHeight(),
+                        color = Color.Transparent,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 2.dp)) {
@@ -401,39 +423,26 @@ fun ScheduleDetailTable(
                     }
                 }
             }
-
-            // 日期列 (原表頭)
+            // 日期列
             Row(modifier = Modifier.height(48.dp)) {
                 Surface(
-                    modifier = Modifier
-                        .width(100.dp)
-                        .fillMaxHeight(),
+                    modifier = Modifier.width(100.dp).fillMaxHeight(),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("姓名", style = MaterialTheme.typography.labelSmall)
-                    }
+                    Box(contentAlignment = Alignment.Center) { Text("姓名", style = MaterialTheme.typography.labelSmall) }
                 }
                 dates.forEach { date ->
                     val day = date.split("-").last()
                     val dayOfWeek = DateUtils.getDayOfWeekText(date)
                     val isWeekend = DateUtils.isWeekend(date)
                     val isHoliday = holidayMap.containsKey(date)
-
                     Surface(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .fillMaxHeight(),
-                        // ✅ 假日也使用醒目顏色
+                        modifier = Modifier.width(60.dp).fillMaxHeight(),
                         color = if (isWeekend || isHoliday) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
+                        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                             Text(day, style = MaterialTheme.typography.labelMedium)
                             Text(dayOfWeek, style = MaterialTheme.typography.labelSmall)
                         }
@@ -442,35 +451,81 @@ fun ScheduleDetailTable(
             }
         }
 
-
         // 表身
         users.forEach { user ->
-            Row(modifier = Modifier.height(56.dp)) {
+            val isExpanded = user.id in expandedUserIds
+
+            // 使用者主要排班列
+            Row(
+                modifier = Modifier
+                    .height(56.dp)
+                    .clickable { // ✅ 使整列可點擊
+                        expandedUserIds = if (isExpanded) {
+                            expandedUserIds - user.id
+                        } else {
+                            expandedUserIds + user.id
+                        }
+                    }
+            ) {
+                // 姓名欄位 - 加入展開/收合圖示
                 Surface(
-                    modifier = Modifier
-                        .width(100.dp)
-                        .fillMaxHeight(),
+                    modifier = Modifier.width(100.dp).fillMaxHeight(),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(4.dp)) {
-                        Text(user.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    ) {
+                        Icon( // ✅ 展開/收合圖示
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "收合" else "展開",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = user.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Start, // 改為靠左對齊
+                            modifier = Modifier.weight(1f) // 讓文字填滿剩餘空間
+                        )
                     }
                 }
 
+                // 每日班別 (保持不變)
                 dates.forEach { date ->
                     val day = date.split("-").last()
                     val shiftId = assignmentMap[user.id]?.get(day)
                     val shift = shiftTypeMap[shiftId]
-
                     Surface(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .fillMaxHeight(),
+                        modifier = Modifier.width(60.dp).fillMaxHeight(),
                         color = shift?.color?.let { it.toComposeColor().copy(alpha = 0.2f) } ?: Color.Transparent,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(text = shift?.shortCode ?: "-", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+
+            // ✅ 展開的個人統計區域
+            AnimatedVisibility(visible = isExpanded) {
+                Surface( // 使用 Surface 統一背景和邊框
+                    modifier = Modifier.fillMaxWidth(), // 填滿寬度
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    FlowRow( // 使用 FlowRow 自動換行
+                        modifier = Modifier.padding(horizontal = 100.dp + 8.dp, vertical = 8.dp), // 左側對齊班表內容，上下加間距
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // 從 userShiftCounts 取得該使用者的統計數據
+                        userShiftCounts[user.id]?.entries?.sortedBy { it.key }?.forEach { (shiftName, count) ->
+                            Text(
+                                text = "$shiftName: $count",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }

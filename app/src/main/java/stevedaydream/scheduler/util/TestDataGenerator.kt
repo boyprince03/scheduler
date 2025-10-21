@@ -1,24 +1,22 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// scheduler/util/TestDataGenerator.kt
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改 generateGroups, generateCompleteTestDataSet ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.util
 
 import stevedaydream.scheduler.data.model.*
 import java.util.*
 import kotlin.math.absoluteValue
 
-/**
- * 提供一組預設的「醫院-專科護理師」排班規則模板
- * @return 一個包含三條硬性規則的列表
- */
+// ... (getHospitalNursePractitionerRules 保持不變) ...
 private fun getHospitalNursePractitionerRules(): List<SchedulingRule> {
     return listOf(
         SchedulingRule(
             id = "template-hnp-consecutive-work-6",
             ruleName = "連續上班不超過N天",
             description = "每人當月不可連續上班超過6天。",
-            ruleType = "hard",
+            ruleType = "hard", // 硬性規則
             penaltyScore = -1000,
             isEnabled = true,
-            isTemplate = true,
+            isTemplate = true, // 標示為範本
             parameters = mapOf("maxDays" to "6")
         ),
         SchedulingRule(
@@ -49,6 +47,7 @@ private fun getHospitalNursePractitionerRules(): List<SchedulingRule> {
  */
 object TestDataGenerator {
 
+    // ... (generateOrganization, generateUsers 保持不變) ...
     /**
      * 產生測試組織
      */
@@ -106,28 +105,43 @@ object TestDataGenerator {
     }
 
     /**
-     * 產生測試群組
+     * 產生測試群組 (加入 rotationState)
      */
     fun generateGroups(
         orgId: String,
-        userIds: List<String>
+        userIds: List<String>,
+        shiftTypes: List<ShiftType> // 新增參數以取得 D, N 班 ID
     ): List<Group> {
+        // 找出 D 班和 N 班的 ID
+        val dShiftId = shiftTypes.find { it.name == "值班(日)" }?.id
+        val nShiftId = shiftTypes.find { it.name == "值班(夜)" }?.id
+
+        // 設定預設輪替狀態
+        val defaultRotationState = mutableMapOf<String, Int>()
+        dShiftId?.let { defaultRotationState[it] = 0 } // 週六 D 班從 0 號開始 (王小明)
+        nShiftId?.let { defaultRotationState[it] = 1 } // 週日 N 班從 1 號開始 (李小華)
+
         return listOf(
             Group(
                 id = "group-${UUID.randomUUID().toString().take(8)}",
                 orgId = orgId,
                 groupName = "日班團隊",
-                memberIds = userIds.take(5)
+                memberIds = userIds.take(5),
+                // 加入預設輪替狀態
+                rotationState = defaultRotationState.toMap()
             ),
             Group(
                 id = "group-${UUID.randomUUID().toString().take(8)}",
                 orgId = orgId,
                 groupName = "夜班團隊",
-                memberIds = userIds.drop(5).take(5)
+                memberIds = userIds.drop(5).take(5),
+                // 加入預設輪替狀態
+                rotationState = defaultRotationState.toMap()
             )
         )
     }
 
+    // ... (generateShiftTypes, generateRequests, generateConsistentScheduleForGroup, generateManpowerPlan 保持不變) ...
     /**
      * 產生測試班別類型
      */
@@ -176,7 +190,6 @@ object TestDataGenerator {
             )
         }
     }
-
     /**
      * 為指定的群組和使用者產生一份連貫的班表和班表分配資料
      */
@@ -288,20 +301,22 @@ object TestDataGenerator {
     }
 
     /**
-     * 新增：產生測試用的預約班表
+     * 新增：產生測試用的預約班表 (保持 public 但不再被 generateCompleteTestDataSet 呼叫)
+     * ✅ 修改：生成 Map<String, List<String>>
      */
-    private fun generateReservations(
+    fun generateReservations( // 保持 public
         orgId: String,
         groupId: String,
-        users: List<User>,
+        users: List<User>, // 接收 User 列表
         month: String
     ): List<Reservation> {
         val dates = DateUtils.getDatesInMonth(month)
         // 只為前三位使用者產生預約
         return users.take(3).map { user ->
-            val dailyShifts = dates.shuffled().take(5).associate { date ->
+            // ✅ Line 313: 將 "off" 包裝成 listOf("off")
+            val dailyShifts: Map<String, List<String>> = dates.shuffled().take(5).associate { date ->
                 val day = date.split("-").last()
-                day to "off" // 隨機預約 5 天假
+                day to listOf("off") // 隨機預約 5 天假，值為 List<String>
             }
             Reservation(
                 id = "res-${user.id}-${UUID.randomUUID().toString().take(4)}",
@@ -310,7 +325,7 @@ object TestDataGenerator {
                 month = month,
                 userId = user.id,
                 userName = user.name,
-                dailyShifts = dailyShifts,
+                dailyShifts = dailyShifts, // 使用 Map<String, List<String>>
                 updatedAt = Date()
             )
         }
@@ -329,12 +344,12 @@ object TestDataGenerator {
         val rules: List<SchedulingRule>,
         val schedules: List<Schedule>,
         val assignments: List<Assignment>,
-        val manpowerPlans: List<ManpowerPlan>, // 新增
-        val reservations: List<Reservation>    // 新增
+        val manpowerPlans: List<ManpowerPlan> // 移除 reservations
+        // val reservations: List<Reservation> // 移除
     )
 
     /**
-     * 產生一份完整的測試資料集
+     * 產生一份完整的測試資料集 (移除 reservations)
      */
     fun generateCompleteTestDataSet(
         orgName: String,
@@ -344,7 +359,8 @@ object TestDataGenerator {
         val orgCode = (1..8).map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".random() }.joinToString("")
         val org = generateOrganization(name = orgName, ownerId = ownerId, orgCode = orgCode)
         var users = generateUsers(org.id)
-        var groups = generateGroups(org.id, users.map { it.id })
+        val shiftTypes = generateShiftTypes(org.id) // 先產生班別
+        var groups = generateGroups(org.id, users.map { it.id }, shiftTypes) // 傳入班別以設定 rotationState
         val month = DateUtils.getCurrentMonthString()
 
         if (testMemberEmail.isNotBlank()) {
@@ -360,12 +376,12 @@ object TestDataGenerator {
                 employmentStatus = mapOf(org.id to "active")
             )
             users = users + testMember
+            // 將測試成員加入第一個群組
             groups = groups.mapIndexed { index, group ->
                 if (index == 0) group.copy(memberIds = group.memberIds + testMemberId) else group
             }
         }
 
-        val shiftTypes = generateShiftTypes(org.id)
         val requests = generateRequests(org.id, users, month)
         val rules = getHospitalNursePractitionerRules()
 
@@ -376,12 +392,10 @@ object TestDataGenerator {
         val schedules = schedulesAndAssignments.map { it.first }
         val assignments = schedulesAndAssignments.flatMap { it.second }
 
-        // 產生人力規劃和預約資料
+        // 產生人力規劃
         val manpowerPlans = groups.map { generateManpowerPlan(org.id, it.id, month) }
-        val reservations = groups.flatMap { group ->
-            val groupUsers = users.filter { it.id in group.memberIds }
-            generateReservations(org.id, group.id, groupUsers, month)
-        }
+        // 不再產生預約資料
+        // val reservations = groups.flatMap { group -> ... }
 
         return TestDataSet(
             organization = org,
@@ -392,8 +406,8 @@ object TestDataGenerator {
             rules = rules,
             schedules = schedules,
             assignments = assignments,
-            manpowerPlans = manpowerPlans,
-            reservations = reservations
+            manpowerPlans = manpowerPlans
+            // reservations = reservations // 移除
         )
     }
 }
