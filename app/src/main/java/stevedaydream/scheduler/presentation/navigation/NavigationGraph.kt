@@ -36,9 +36,11 @@ sealed class Screen(val route: String) {
     object ShiftReservation : Screen("shift_reservation/{orgId}/{groupId}/{month}") {
         fun createRoute(orgId: String, groupId: String, month: String) = "shift_reservation/$orgId/$groupId/$month"
     }
-    object MemberList : Screen("member_list/{orgId}") {
-        fun createRoute(orgId: String) = "member_list/$orgId"
+    // 修改 MemberList 路由定義
+    object MemberList : Screen("member_list/{orgId}/{groupId}") { // 加入 groupId
+        fun createRoute(orgId: String, groupId: String) = "member_list/$orgId/$groupId" // 更新 createRoute
     }
+
     object Schedule : Screen("schedule/{orgId}/{groupId}") {
         fun createRoute(orgId: String, groupId: String) = "schedule/$orgId/$groupId"
     }
@@ -171,28 +173,32 @@ fun NavigationGraph(
                 onBackClick = { navController.popBackStack() }
             )
         }
-
         composable(Screen.GroupList.route) { backStackEntry ->
             val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
             GroupListScreen(
                 orgId = orgId,
+                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+                // 傳入正確的 onGroupClick 邏輯
                 onGroupClick = { groupId ->
                     navController.navigate(Screen.Schedule.createRoute(orgId, groupId))
                 },
+                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
                 onBackClick = { navController.popBackStack() },
                 onNavigateToInviteManagement = { org ->
                     navController.navigate(Screen.InviteManagement.createRoute(org))
                 },
-                onNavigateToMemberList = { org ->
-                    navController.navigate(Screen.MemberList.createRoute(org))
+                onNavigateToMemberList = { org, group ->
+                    navController.navigate(Screen.MemberList.createRoute(org, group))
                 }
             )
         }
 
         composable(Screen.MemberList.route) { backStackEntry ->
-            val orgId = backStackEntry.arguments?.getString("orgId") ?: return@composable
+            // 從路由參數獲取 id (ViewModel 會處理)
+            val orgIdArg = backStackEntry.arguments?.getString("orgId") ?: return@composable
+            val groupIdArg = backStackEntry.arguments?.getString("groupId") ?: return@composable
             MemberListScreen(
-                orgId = orgId,
+                // 不再需要傳遞 orgId 和 groupId 給 Screen
                 onBackClick = { navController.popBackStack() }
             )
         }

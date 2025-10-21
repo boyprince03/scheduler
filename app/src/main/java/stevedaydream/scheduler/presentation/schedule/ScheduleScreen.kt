@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +23,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.data.model.Schedule
 import stevedaydream.scheduler.util.DateUtils
 import stevedaydream.scheduler.util.showToast
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.lazy.LazyColumn // ✅ 1. 匯入 LazyColumn
+import androidx.compose.foundation.lazy.items // ✅ 2. 匯入 items
+import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,23 +42,46 @@ fun ScheduleScreen(
     onNavigateToManpower: (String, String, String) -> Unit,
     onNavigateToReservation: (String, String, String) -> Unit
 ) {
+    // --- States (大部分保持不變) ---
     val group by viewModel.group.collectAsState()
     val canSchedule by viewModel.canSchedule.collectAsState()
     val isScheduler by viewModel.isScheduler.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     val schedules by viewModel.schedules.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
+    val selectedStrategy by viewModel.selectedStrategy.collectAsState()
+    val isCalculatingRotation by viewModel.isCalculatingRotation.collectAsState()
+    // --- ✅ 3. 取得預覽相關狀態 ---
+    val isPreviewGenerating by viewModel.isPreviewGenerating.collectAsState()
+    val previewGeneratedSchedule by viewModel.previewGeneratedSchedule.collectAsState()
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var selectedMonth by remember { mutableStateOf(DateUtils.getCurrentMonthString()) }
     var scheduleToDelete by remember { mutableStateOf<Schedule?>(null) }
     val context = LocalContext.current
 
+    // --- LaunchedEffects (增加預覽錯誤監聽) ---
     LaunchedEffect(Unit) {
         viewModel.generateSuccess.collect {
-            // 可以顯示成功訊息或導航到排班檢視頁面
+            context.showToast("智慧排班已生成並儲存") // 稍微修改提示
         }
     }
+    LaunchedEffect(Unit) {
+        viewModel.rotationCalculationResult.collect { result ->
+            result.onSuccess {
+                context.showToast("輪替預排班計算並儲存成功")
+            }.onFailure { error ->
+                context.showToast("輪替計算失敗: ${error.message}")
+            }
+        }
+    }
+    // --- ✅ 4. 監聽預覽錯誤 ---
+    LaunchedEffect(Unit) {
+        viewModel.previewError.collect { errorMessage ->
+            context.showToast(errorMessage)
+        }
+    }
+
 
     Scaffold(
         topBar = {
@@ -58,14 +89,13 @@ fun ScheduleScreen(
                 title = { Text(group?.groupName ?: "排班") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (isScheduler) {
                         IconButton(onClick = { viewModel.releaseScheduler() }) {
-                            Icon(Icons.Filled.ExitToApp, contentDescription = "釋放排班權")
-
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權")
                         }
                     }
                 }
@@ -82,7 +112,6 @@ fun ScheduleScreen(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 排班者狀態卡片
             group?.let { currentGroup ->
                 SchedulerStatusCard(
                     group = currentGroup,
@@ -91,7 +120,6 @@ fun ScheduleScreen(
                     onClaimClick = { viewModel.claimScheduler() }
                 )
 
-                // 檢查是否符合顯示「加入群組」按鈕的條件
                 val showJoinButton = isScheduler &&
                         currentUser != null &&
                         (currentUser?.role == "org_admin" || currentUser?.role == "superuser") &&
@@ -108,8 +136,6 @@ fun ScheduleScreen(
                     }
                 }
 
-                // ✅ 核心修正：調整 UI 顯示邏輯
-                // 1. 如果預約正在進行 (active) 或已關閉 (closed)，顯示預約狀態卡片
                 if (currentGroup.reservationStatus == "active" || currentGroup.reservationStatus == "closed") {
                     ReservationStatusCard(
                         group = currentGroup,
@@ -123,26 +149,42 @@ fun ScheduleScreen(
                     )
                 }
 
-                // 2. 如果是排班者，且預約未在進行中 (inactive 或 closed)，則顯示排班功能卡片
                 if (isScheduler && currentGroup.reservationStatus != "active") {
                     SchedulerFunctionCard(
                         isGenerating = isGenerating,
+                        isPreviewGenerating = isPreviewGenerating, // ✅ 5. 傳入預覽狀態
                         selectedMonth = selectedMonth,
+                        selectedStrategy = selectedStrategy,
+                        onStrategyChange = { viewModel.selectStrategy(it) },
                         onShowMonthPicker = { showMonthPicker = true },
                         onNavigateToShiftTypeSettings = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
                         onNavigateToRules = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
                         onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                         onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
-                        onGenerate = { viewModel.generateSmartSchedule(selectedMonth) }
+                        onGenerate = { viewModel.generateSmartSchedule(selectedMonth) },
+                        onGeneratePreview = { viewModel.generatePreviewSchedule(selectedMonth) } // ✅ 6. 傳入預覽回呼
                     )
                 }
 
-                // 3. 如果是排班者，且預約狀態為未啟用 (inactive)，才顯示「啟動預約」按鈕
                 if (isScheduler && currentGroup.reservationStatus == "inactive") {
-                    Button(onClick = { viewModel.toggleReservation(selectedMonth, "inactive") }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.EventAvailable, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("啟動 ${DateUtils.getDisplayMonth(selectedMonth)} 預約")
+                    Button(
+                        onClick = { viewModel.toggleReservation(selectedMonth, "inactive") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isCalculatingRotation
+                    ) {
+                        if (isCalculatingRotation) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("計算輪替中...")
+                        } else {
+                            Icon(Icons.Default.EventAvailable, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("啟動 ${DateUtils.getDisplayMonth(selectedMonth)} 預約")
+                        }
                     }
                 }
             }
@@ -159,6 +201,16 @@ fun ScheduleScreen(
         }
     }
 
+    // --- ✅ 7. 顯示預覽結果 Dialog ---
+    if (previewGeneratedSchedule != null) {
+        PreviewScheduleDialog(
+            result = previewGeneratedSchedule!!,
+            onDismiss = { viewModel.clearPreview() },
+            onSave = { viewModel.savePreviewSchedule() }
+        )
+    }
+
+
     if (showMonthPicker) {
         MonthPickerDialog(
             currentMonth = selectedMonth,
@@ -169,18 +221,18 @@ fun ScheduleScreen(
             }
         )
     }
-    // ✅ 顯示刪除確認對話框
+
     scheduleToDelete?.let { schedule ->
         stevedaydream.scheduler.presentation.common.ConfirmDialog(
             title = "確認刪除",
             message = "您確定要刪除 ${DateUtils.getDisplayMonth(schedule.month)} 的班表草稿嗎？此操作無法復原。",
             onConfirm = {
                 viewModel.deleteSchedule(schedule.id)
-                scheduleToDelete = null // 關閉對話框
+                scheduleToDelete = null
                 context.showToast("班表已刪除")
             },
             onDismiss = {
-                scheduleToDelete = null // 關閉對話框
+                scheduleToDelete = null
             }
         )
     }
@@ -193,6 +245,7 @@ fun ScheduleListSection(
     onScheduleClick: (Schedule) -> Unit,
     onDeleteClick: (Schedule) -> Unit
 ) {
+    // ... (保持不變) ...
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -267,6 +320,7 @@ fun ScheduleCard(
     onClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    // ... (保持不變) ...
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -374,18 +428,16 @@ fun ScheduleCard(
         Spacer(Modifier.height(8.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), // 增加 padding
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // ✅ 顯示流水號和生成時間
             Text(
-                text = "ID: ${schedule.id.take(8).uppercase()}  ·  ${DateUtils.timestampToDateString(schedule.generatedAt.time)}",
+                text = "ID: ${schedule.id.take(8).uppercase()} · ${if (schedule.generationMethod == "manual") "手動" else "智慧"}", // 顯示生成方式
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // ✅ 僅在草稿狀態下顯示刪除按鈕
             if (schedule.status == "draft") {
                 IconButton(onClick = onDeleteClick) {
                     Icon(
@@ -407,6 +459,7 @@ fun MonthPickerDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
+    // ... (保持不變) ...
     var selectedMonth by remember { mutableStateOf(currentMonth) }
 
     AlertDialog(
@@ -414,7 +467,6 @@ fun MonthPickerDialog(
         title = { Text("選擇月份") },
         text = {
             Column {
-                // 簡化版:顯示未來6個月
                 repeat(6) { index ->
                     val month = stevedaydream.scheduler.util.DateUtils.addMonths(
                         stevedaydream.scheduler.util.DateUtils.getCurrentMonthString(),
@@ -457,29 +509,23 @@ fun SchedulerStatusCard(
     isScheduler: Boolean,
     onClaimClick: () -> Unit
 ) {
-    // 狀態：用來存放格式化後的剩餘時間字串
+    // ... (保持不變) ...
     var remainingTime by remember { mutableStateOf("") }
 
-    // 當 isScheduler 為 true 且 group 物件的到期時間改變時，啟動或重啟此計時器
     if (isScheduler) {
         LaunchedEffect(key1 = group.schedulerLeaseExpiresAt) {
             val expiresAt = group.schedulerLeaseExpiresAt?.time ?: 0L
-            // 只要還沒到期，就持續更新
             while (System.currentTimeMillis() < expiresAt) {
                 val remainingMillis = expiresAt - System.currentTimeMillis()
-                if (remainingMillis <= 0) break // 時間到就跳出迴圈
+                if (remainingMillis <= 0) break
 
-                // 計算剩餘的分鐘和秒數
                 val minutes = remainingMillis / 60000
                 val seconds = (remainingMillis % 60000) / 1000
 
-                // 格式化字串，例如："剩下 01:59"
                 remainingTime = String.format("剩下 %02d:%02d", minutes, seconds)
 
-                // 每秒更新一次
                 kotlinx.coroutines.delay(1000)
             }
-            // 迴圈結束後，顯示租約已到期
             remainingTime = "租約已到期"
         }
     }
@@ -506,7 +552,6 @@ fun SchedulerStatusCard(
 
             when {
                 isScheduler -> {
-                    // 將原本的 Row 改為 Column，以便垂直排列文字
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -519,13 +564,12 @@ fun SchedulerStatusCard(
                             )
                             Text("你正在排班中", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                         }
-                        // 顯示剩餘時間
                         if (remainingTime.isNotEmpty()) {
                             Text(
                                 text = remainingTime,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                modifier = Modifier.padding(start = 32.dp) // 對齊上方圖示
+                                modifier = Modifier.padding(start = 32.dp)
                             )
                         }
                     }
@@ -567,6 +611,7 @@ fun ReservationStatusCard(
     onToggleReservation: () -> Unit,
     onNavigateToReservation: () -> Unit
 ) {
+    // ... (保持不變) ...
     val statusText = when (group.reservationStatus) {
         "active" -> "預約進行中"
         "closed" -> "預約已關閉"
@@ -615,20 +660,27 @@ fun ReservationStatusCard(
     }
 }
 
-/**
- * 將原有的排班功能區塊獨立成一個 Composable
- */
+// --- ✅ 8. 修改 SchedulerFunctionCard，加入預覽按鈕 ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SchedulerFunctionCard(
     isGenerating: Boolean,
+    isPreviewGenerating: Boolean, // 新增
     selectedMonth: String,
+    selectedStrategy: SchedulingStrategy,
+    onStrategyChange: (SchedulingStrategy) -> Unit,
     onShowMonthPicker: () -> Unit,
     onNavigateToShiftTypeSettings: () -> Unit,
     onNavigateToRules: () -> Unit,
     onNavigateToManpower: () -> Unit,
     onNavigateToManualSchedule: () -> Unit,
-    onGenerate: () -> Unit
+    onGenerate: () -> Unit,
+    onGeneratePreview: () -> Unit // 新增
 ) {
+    var strategyDropdownExpanded by remember { mutableStateOf(false) }
+    val strategies = SchedulingStrategy.values()
+    val isAnyProcessRunning = isGenerating || isPreviewGenerating // 判斷是否有任何生成在進行
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -644,6 +696,38 @@ private fun SchedulerFunctionCard(
                 style = MaterialTheme.typography.titleMedium
             )
 
+            // --- 排班策略選擇 ---
+            ExposedDropdownMenuBox(
+                expanded = strategyDropdownExpanded,
+                onExpandedChange = { strategyDropdownExpanded = !strategyDropdownExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = selectedStrategy.displayName,
+                    onValueChange = {}, // ReadOnly
+                    readOnly = true,
+                    label = { Text("排班策略") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = strategyDropdownExpanded) },
+                    modifier = Modifier.menuAnchor()
+                )
+                ExposedDropdownMenu(
+                    expanded = strategyDropdownExpanded,
+                    onDismissRequest = { strategyDropdownExpanded = false }
+                ) {
+                    strategies.forEach { strategy ->
+                        DropdownMenuItem(
+                            text = { Text(strategy.displayName) },
+                            onClick = {
+                                onStrategyChange(strategy)
+                                strategyDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+
+            // --- 功能按鈕 ---
             OutlinedButton(
                 onClick = onShowMonthPicker,
                 modifier = Modifier.fillMaxWidth()
@@ -684,10 +768,34 @@ private fun SchedulerFunctionCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("手動排班")
             }
+
+            // --- ✅ 9. 新增預覽按鈕 ---
+            OutlinedButton(
+                onClick = onGeneratePreview,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isAnyProcessRunning // 任何生成進行中則禁用
+            ) {
+                if (isPreviewGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.primary, // 使用 OutlineButton 顏色
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("預覽生成中...")
+                } else {
+                    Icon(Icons.Default.Visibility, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("預覽輪替與預排班")
+                }
+            }
+
+
+            // --- ✅ 10. 修改原生成按鈕 ---
             Button(
                 onClick = onGenerate,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isGenerating
+                enabled = !isAnyProcessRunning // 任何生成進行中則禁用
             ) {
                 if (isGenerating) {
                     CircularProgressIndicator(
@@ -696,14 +804,77 @@ private fun SchedulerFunctionCard(
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("生成中...")
+                    Text("生成儲存中...") // 修改文字
                 } else {
                     Icon(Icons.Default.AutoAwesome, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("開始智慧排班")
+                    Text("生成並儲存班表") // 修改文字
                 }
             }
         }
     }
 }
+
+// --- ✅ 11. 新增：預覽結果 Dialog ---
+@Composable
+fun PreviewScheduleDialog(
+    result: ScheduleGenerator.ScheduleGenerationResult,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("預排班預覽 (${DateUtils.getDisplayMonth(result.schedule.month)})") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    Text("班表分數: ${result.score}", style = MaterialTheme.typography.titleMedium)
+                }
+                if (result.warnings.isNotEmpty()) {
+                    item {
+                        Text(
+                            "警告 (${result.warnings.size}):",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary // 使用不同顏色區分
+                        )
+                    }
+                    items(result.warnings) { warning ->
+                        Text(" - $warning", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+                if (result.violations.isNotEmpty()) {
+                    item {
+                        Text(
+                            "規則違反 (${result.violations.size}):",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    items(result.violations) { violation ->
+                        Text(" - $violation", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (result.warnings.isEmpty() && result.violations.isEmpty()) {
+                    item {
+                        Text("班表看起來不錯！沒有明顯的警告或規則違反。")
+                    }
+                }
+                // 可以選擇性加入顯示輪替預覽 (如果需要)
+                // item { Text("輪替預覽: (此處可顯示 rotationSchedule 內容)") }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onSave) {
+                Text("儲存此班表")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("關閉預覽")
+            }
+        }
+    )
+}
+
+
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

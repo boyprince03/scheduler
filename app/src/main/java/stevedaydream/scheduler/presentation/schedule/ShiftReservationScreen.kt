@@ -1,6 +1,7 @@
 // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.presentation.schedule
 
+// ... (imports 保持不變) ...
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +43,7 @@ fun ShiftReservationScreen(
     var selectedDay by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        // ... (Scaffold 內容，TopAppBar 保持不變) ...
         topBar = {
             TopAppBar(
                 title = { Text("${DateUtils.getDisplayMonth(uiState.month)} 預約班表") },
@@ -73,7 +75,7 @@ fun ShiftReservationScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // 班別圖例
+                // 班別圖例 (保持不變)
                 ShiftLegend(shiftTypes = uiState.shiftTypes)
                 Divider()
                 // 排班表格
@@ -82,7 +84,8 @@ fun ShiftReservationScreen(
                     users = uiState.users,
                     shiftTypes = uiState.shiftTypes,
                     allReservations = uiState.allReservations,
-                    myReservation = uiState.myReservation, // ✅ 傳入最新的 myReservation
+                    myReservation = uiState.myReservation,
+                    rotationSchedule = uiState.rotationSchedule, // <<-- 傳入 rotationSchedule
                     myUserId = viewModel.currentUserId,
                     onCellClick = { day ->
                         selectedDay = day
@@ -93,39 +96,50 @@ fun ShiftReservationScreen(
         }
     }
 
-    // 班別選擇 Dialog
+    // 班別選擇 Dialog 修改：檢查是否為預排班
     if (showShiftSelector && selectedDay != null) {
         val offShift = uiState.shiftTypes.find { it.shortCode == "OFF" }
         val selectableShifts = uiState.shiftTypes.filter { it.shortCode != "OFF" }
+        // 檢查當天是否有預排輪班
+        val rotationShiftId = uiState.rotationSchedule[viewModel.currentUserId]?.get(selectedDay!!)
+        val rotationShift = rotationShiftId?.let { uiState.shiftTypes.find { s -> s.id == it } }
 
         AlertDialog(
             onDismissRequest = { showShiftSelector = false },
             title = { Text("預約 ${uiState.month}-${selectedDay}") },
             text = {
                 Column {
-                    // 優先顯示請假選項
-                    offShift?.let {
-                        ShiftSelectorItem(shift = it, isSelected = uiState.myReservation?.dailyShifts?.get(selectedDay!!) == it.id) {
-                            viewModel.onCellClicked(selectedDay!!, it.id)
-                            showShiftSelector = false
+                    // 如果有預排輪班，顯示提示訊息且不允許修改
+                    if (rotationShift != null) {
+                        Text(
+                            "此日已由系統預排 ${rotationShift.name} 輪班，無法自行修改。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        // 優先顯示請假選項
+                        offShift?.let {
+                            ShiftSelectorItem(shift = it, isSelected = uiState.myReservation?.dailyShifts?.get(selectedDay!!) == it.id) {
+                                viewModel.onCellClicked(selectedDay!!, it.id)
+                                showShiftSelector = false
+                            }
                         }
-                    }
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    // 其他班別
-                    selectableShifts.forEach { shift ->
-                        ShiftSelectorItem(shift = shift, isSelected = uiState.myReservation?.dailyShifts?.get(selectedDay!!) == shift.id) {
-                            viewModel.onCellClicked(selectedDay!!, shift.id)
-                            showShiftSelector = false
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        // 其他班別
+                        selectableShifts.forEach { shift ->
+                            ShiftSelectorItem(shift = shift, isSelected = uiState.myReservation?.dailyShifts?.get(selectedDay!!) == shift.id) {
+                                viewModel.onCellClicked(selectedDay!!, shift.id)
+                                showShiftSelector = false
+                            }
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { showShiftSelector = false }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { showShiftSelector = false }) { Text("關閉") } } // 改為關閉
         )
     }
 
-    // 即時衝突提醒 Dialog
+    // ... (即時衝突提醒 Dialog 和 儲存後總結 Dialog 保持不變) ...
     uiState.instantConflict?.let { conflict ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissInstantConflict() },
@@ -136,19 +150,20 @@ fun ShiftReservationScreen(
         )
     }
 
-    // 儲存後總結 Dialog
     uiState.saveSummary?.let { summary ->
         ReservationSummaryDialog(summary = summary, onDismiss = { viewModel.dismissSummaryDialog() })
     }
 }
 
+// ReservationTable 修改：接收 rotationSchedule 並調整顯示邏輯
 @Composable
 fun ReservationTable(
     month: String,
     users: List<User>,
     shiftTypes: List<ShiftType>,
     allReservations: List<Reservation>,
-    myReservation: Reservation?, // ✅ 接收 myReservation
+    myReservation: Reservation?,
+    rotationSchedule: Map<String, Map<String, String>>, // <<-- 新增 rotationSchedule 參數
     myUserId: String?,
     onCellClick: (String) -> Unit
 ) {
@@ -156,22 +171,18 @@ fun ReservationTable(
     val scrollState = rememberScrollState()
     val shiftTypeMap = shiftTypes.associateBy { it.id }
 
-    // ✅ 建立一個可變的 Map，並優先使用 myReservation 的資料
     val reservationMap = remember(allReservations, myReservation) {
         val map = allReservations.associateBy { it.userId }.toMutableMap()
-        myReservation?.let {
-            map[it.userId] = it
-        }
+        myReservation?.let { map[it.userId] = it }
         map
     }
-
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .horizontalScroll(scrollState)
     ) {
-        // 表頭 - 日期
+        // 表頭 - 日期 (保持不變)
         Row(modifier = Modifier.height(48.dp)) {
             // 姓名欄
             Surface(
@@ -214,7 +225,7 @@ fun ReservationTable(
         // 表身 - 使用者預約狀態
         users.forEach { user ->
             Row(modifier = Modifier.height(56.dp)) {
-                // 姓名
+                // 姓名 (保持不變)
                 Surface(
                     modifier = Modifier
                         .width(100.dp)
@@ -226,32 +237,59 @@ fun ReservationTable(
                     }
                 }
 
-                // 班別
+                // 班別 - 修改顯示邏輯
                 dates.forEach { date ->
                     val day = date.split("-").last()
-                    val shiftId = reservationMap[user.id]?.dailyShifts?.get(day)
-                    val shift = shiftTypeMap[shiftId]
                     val isMyRow = user.id == myUserId
+
+                    // 1. 檢查是否有預排輪班
+                    val rotationShiftId = rotationSchedule[user.id]?.get(day)
+                    val rotationShift = rotationShiftId?.let { shiftTypeMap[it] }
+
+                    // 2. 檢查是否有使用者預約
+                    val reservationShiftId = reservationMap[user.id]?.dailyShifts?.get(day)
+                    val reservationShift = reservationShiftId?.let { shiftTypeMap[it] }
+
+                    // 決定顯示哪個班別以及樣式
+                    val displayShift = rotationShift ?: reservationShift
+                    val displayShortCode = displayShift?.shortCode ?: "-"
+                    val cellColor: Color
+                    val textColor: Color
+                    val isClickable = isMyRow && rotationShift == null // 自己的格子且沒有預排輪班才能點
+
+                    when {
+                        rotationShift != null -> { // 優先顯示輪班
+                            cellColor = MaterialTheme.colorScheme.surfaceVariant // 灰色背景
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant // 深灰色文字
+                        }
+                        reservationShift != null -> { // 顯示使用者預約
+                            cellColor = reservationShift.color.toComposeColor().copy(alpha = 0.3f)
+                            textColor = MaterialTheme.colorScheme.onSurface // 正常文字顏色
+                        }
+                        else -> { // 空白格
+                            cellColor = Color.Transparent
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    }
 
                     Surface(
                         modifier = Modifier
                             .width(60.dp)
                             .fillMaxHeight()
-                            .clickable(enabled = isMyRow) { onCellClick(day) },
-                        color = shift?.color?.let {
-                            it.toComposeColor().copy(alpha = 0.3f)
-                        } ?: Color.Transparent,
+                            .clickable(enabled = isClickable) { onCellClick(day) }, // <<-- 根據 isClickable 決定是否可點
+                        color = cellColor,
                         border = BorderStroke(
                             1.dp,
-                            // 如果是登入者的格子，給予更明顯的框線
+                            // 自己的格子框線加粗
                             if (isMyRow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                         )
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = shift?.shortCode ?: "-",
+                                text = displayShortCode,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isMyRow) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (isMyRow && reservationShift != null) FontWeight.Bold else FontWeight.Normal, // 自己的預約加粗
+                                color = textColor // <<-- 使用計算出的文字顏色
                             )
                         }
                     }
@@ -261,6 +299,8 @@ fun ReservationTable(
     }
 }
 
+
+// ... (ShiftSelectorItem 和 ReservationSummaryDialog 保持不變) ...
 @Composable
 private fun ShiftSelectorItem(shift: ShiftType, isSelected: Boolean, onClick: () -> Unit) {
     Surface(

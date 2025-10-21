@@ -18,9 +18,11 @@ import stevedaydream.scheduler.data.local.SchedulerDatabase
 import stevedaydream.scheduler.data.remote.FirebaseDataSource
 import stevedaydream.scheduler.data.repository.SchedulerRepositoryImpl
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
+import stevedaydream.scheduler.domain.scheduling.RotationScheduler // 引入 RotationScheduler
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
+
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -91,5 +93,10 @@ object AppModule {
     @Singleton
     fun provideScheduleGenerator(): ScheduleGenerator {
         return ScheduleGenerator()
+    }
+    @Provides
+    @Singleton
+    fun provideRotationScheduler(): RotationScheduler { // 新增 Provide 方法
+        return RotationScheduler()
     }
 }

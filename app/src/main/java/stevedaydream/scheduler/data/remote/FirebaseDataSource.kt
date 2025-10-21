@@ -1,8 +1,7 @@
-// 修改開始
 // scheduler/data/remote/FirebaseDataSource.kt
 package stevedaydream.scheduler.data.remote
 
-import android.graphics.Insets.add
+// ... (其他 imports 保持不變) ...
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -17,6 +16,7 @@ import javax.inject.Singleton
 import stevedaydream.scheduler.util.TestDataGenerator
 import java.util.Calendar
 import kotlinx.coroutines.flow.combine
+import com.google.firebase.firestore.ktx.toObject
 
 @Singleton
 class FirebaseDataSource @Inject constructor(
@@ -24,64 +24,23 @@ class FirebaseDataSource @Inject constructor(
     private val auth: FirebaseAuth
 ) {
 
-    /**
-     * 產生一組預設的排班規則
-     */
-    private fun getDefaultSchedulingRules(): List<SchedulingRule> {
-        return listOf(
-            SchedulingRule(
-                ruleName = "連續上班不超過N天",
-                description = "避免員工因連續工作過多天而過勞。",
-                ruleType = "soft",
-                penaltyScore = -50,
-                isEnabled = true,
-                parameters = mapOf("maxDays" to "6")
-            ),
-            SchedulingRule(
-                ruleName = "輪班間隔需大於N小時",
-                description = "確保員工在兩次輪班之間有足夠的休息時間。",
-                ruleType = "hard",
-                penaltyScore = -1000,
-                isEnabled = true,
-                parameters = mapOf("minHours" to "11")
-            )
-        )
+    // ... (observeRotationSettings, saveRotationSettings, scheduleOrganizationForDeletion, transferOwnership, leaveOrganization, updateEmploymentStatus 保持不變) ...
+    fun observeRotationSettings(orgId: String, groupId: String): Flow<RotationSettingsContainer?> {
+        return firestore.collection("organizations/$orgId/groups").document(groupId)
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    val settingsData = snapshot.get("rotationSettings") as? Map<String, Any>
+                    settingsData?.let { RotationSettingsContainer.fromFirestoreMap(it) }
+                } else {
+                    null
+                }
+            }
     }
-
-    /**
-     * 產生一組預設的班別
-     */
-    private fun getDefaultShiftTypes(): List<ShiftType> {
-        return listOf(
-            ShiftType(
-                name = "放假",
-                shortCode = "OFF",
-                startTime = "00:00",
-                endTime = "00:00",
-                color = "#D0021B" // 紅色
-            ),
-            ShiftType(
-                name = "白班",
-                shortCode = "S",
-                startTime = "09:00",
-                endTime = "17:00",
-                color = "#4A90E2" // 藍色
-            ),
-            ShiftType(
-                name = "值班(夜)",
-                shortCode = "N",
-                startTime = "21:00",
-                endTime = "09:00",
-                color = "#000000" // 黑色
-            ),
-            ShiftType(
-                name = "值班(日)",
-                shortCode = "D",
-                startTime = "09:00",
-                endTime = "21:00",
-                color = "#7ED321" // 綠色
-            )
-        )
+    suspend fun saveRotationSettings(orgId: String, groupId: String, settings: RotationSettingsContainer): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/groups").document(groupId)
+            .update("rotationSettings", settings.toFirestoreMap())
+            .await()
     }
     suspend fun scheduleOrganizationForDeletion(orgId: String): Result<Unit> = runCatching {
         val thirtyDaysFromNow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 30) }.time
@@ -92,28 +51,20 @@ class FirebaseDataSource @Inject constructor(
             ))
             .await()
     }
-
     suspend fun transferOwnership(orgId: String, newOwnerId: String): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(orgId)
         val newOwnerUserRef = firestore.collection("users").document(newOwnerId)
         val newOwnerOrgUserRef = orgRef.collection("users").document(newOwnerId)
 
         firestore.runTransaction { transaction ->
-            // 1. 更新組織的 ownerId
             transaction.update(orgRef, "ownerId", newOwnerId)
-
-            // 2. 更新新擁有者的角色 (在頂層 user 和子集合 user 中)
             transaction.update(newOwnerUserRef, "role", "org_admin")
             transaction.update(newOwnerOrgUserRef, "role", "org_admin")
-
         }.await()
     }
-
     suspend fun leaveOrganization(orgId: String, userId: String): Result<Unit> = runCatching {
         val userRef = firestore.collection("users").document(userId)
         val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
-
-        // 1. 在批次寫入前，先讀取所有需要的資料
         val userSnapshot = userRef.get().await()
         val user = userSnapshot.toObject(User::class.java)
         val groupsInOrg = firestore.collection("organizations/$orgId/groups")
@@ -121,26 +72,19 @@ class FirebaseDataSource @Inject constructor(
             .get()
             .await()
 
-        // 2. 執行批次寫入
         firestore.runBatch { batch ->
-            // 從頂層 User 物件中移除 orgId
             batch.update(userRef, "orgIds", FieldValue.arrayRemove(orgId))
-
-            // 如果 currentOrgId 是要離開的組織，則清空
             if (user?.currentOrgId == orgId) {
                 batch.update(userRef, "currentOrgId", "")
             }
-
-            // 從組織底下的 users 子集合中刪除使用者
             batch.delete(subCollectionUserRef)
-
-            // 從該組織的所有群組中移除使用者
             groupsInOrg.documents.forEach { doc ->
                 batch.update(doc.reference, "memberIds", FieldValue.arrayRemove(userId))
+                // 同時從 userOrder 移除 (如果存在)
+                batch.update(doc.reference, "userOrder", FieldValue.arrayRemove(userId))
             }
         }.await()
     }
-
     suspend fun updateEmploymentStatus(orgId: String, userId: String, status: String): Result<Unit> = runCatching {
         val userRef = firestore.collection("users").document(userId)
         val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
@@ -152,12 +96,11 @@ class FirebaseDataSource @Inject constructor(
         }.await()
     }
 
-
-    // ==================== 組織 ====================
+    // ... (createOrganizationAndFirstUser, deleteOrganizationAndSubcollections, observeOrganization, observeAllOrganizations, observeOrganizationsByOwner, getOrganizationsByOwner, generateUniqueOrgCode 保持不變) ...
     suspend fun createOrganizationAndFirstUser(org: Organization, user: User): Result<String> = runCatching {
         val orgRef = firestore.collection("organizations").document()
         val topLevelUserRef = firestore.collection("users").document(user.id)
-        val subCollectionUserRef = orgRef.collection("users").document(user.id) // 取得子集合中的使用者參照
+        val subCollectionUserRef = orgRef.collection("users").document(user.id)
 
         val orgWithId = org.copy(id = orgRef.id)
         val userWithOrgId = user.copy(
@@ -166,86 +109,82 @@ class FirebaseDataSource @Inject constructor(
         )
 
         firestore.runBatch { batch ->
-            // 1. 建立組織文件
             batch.set(orgRef, orgWithId.toFirestoreMap())
-
-            // 2. 更新頂層的使用者文件
             batch.set(topLevelUserRef, userWithOrgId.toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge())
-
-            // 3. (新增的步驟) 在組織的子集合中建立使用者文件
             batch.set(subCollectionUserRef, userWithOrgId.toFirestoreMap())
 
-            // 4. 建立預設規則
             val rulesCollection = orgRef.collection("schedulingRules")
             getDefaultSchedulingRules().forEach { rule ->
                 val ruleRef = rulesCollection.document()
                 batch.set(ruleRef, rule.toFirestoreMap())
             }
 
-            // 5. 建立預設班別
             val shiftTypesCollection = orgRef.collection("shiftTypes")
             getDefaultShiftTypes().forEach { shiftType ->
                 val shiftTypeRef = shiftTypesCollection.document()
-                // 將 orgId 和 id 寫入物件中，並直接傳遞物件本身
                 val finalShiftType = shiftType.copy(id = shiftTypeRef.id, orgId = orgRef.id)
                 batch.set(shiftTypeRef, finalShiftType)
             }
         }.await()
         orgRef.id
     }
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
     suspend fun deleteOrganizationAndSubcollections(orgId: String): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(orgId)
-
-        // 警告：在生產環境中，強烈建議使用 Cloud Function 進行遞歸刪除，以確保原子性和完整性。
-        // 這個客戶端實作是為了演示，可能會很慢或無法完整刪除。
         val batch = firestore.batch()
-
-        // 刪除已知的子集合
         val subcollections = listOf(
             "users", "groups", "shiftTypes", "schedulingRules",
             "schedules", "invites", "groupJoinRequests", "manpowerPlans"
+            // "reservations" // reservations 應該在 org 層級
         )
         for (collectionName in subcollections) {
             val collectionRef = orgRef.collection(collectionName)
             val documents = collectionRef.get().await()
             for (document in documents) {
-                // 特殊處理 schedules，因為它還有下一層的 assignments 子集合
                 if (collectionName == "schedules") {
                     val assignments = document.reference.collection("assignments").get().await()
                     for (assignment in assignments) {
                         batch.delete(assignment.reference)
                     }
+                    // 刪除 group 下的 rotationSchedules
+                    val rotationSchedules = document.reference.collection("rotationSchedules").get().await()
+                    for(rsDoc in rotationSchedules) {
+                        batch.delete(rsDoc.reference)
+                    }
+                }
+                // 刪除 group 下的 rotationSchedules (移到 group 刪除邏輯外)
+                if (collectionName == "groups") {
+                    val rotationSchedules = document.reference.collection("rotationSchedules").get().await()
+                    for(rsDoc in rotationSchedules) {
+                        batch.delete(rsDoc.reference)
+                    }
                 }
                 batch.delete(document.reference)
             }
         }
+        // 刪除 org 層級的 reservations
+        val reservations = firestore.collection("organizations/$orgId/reservations").get().await()
+        reservations.documents.forEach { batch.delete(it.reference) }
 
-        // 刪除組織文件本身
         batch.delete(orgRef)
-        // 提交第一批刪除（刪除組織和其子集合）
         batch.commit().await()
 
-        // 第二階段：清理頂層 users 集合
         val usersQuery = firestore.collection("users").whereArrayContains("orgIds", orgId).get().await()
         firestore.runBatch { userBatch ->
             usersQuery.documents.forEach { doc ->
                 val user = doc.toObject(User::class.java)
-                // 如果使用者只屬於這個被刪除的組織，則直接刪除該使用者文件
                 if (user != null && user.orgIds.size == 1 && user.orgIds.contains(orgId)) {
                     userBatch.delete(doc.reference)
                 } else {
-                    // 否則，只從 orgIds 陣列中移除該組織 ID
                     userBatch.update(doc.reference, "orgIds", FieldValue.arrayRemove(orgId))
-                    // 如果被刪除的組織是當前組織，則清空 currentOrgId
                     if (doc.getString("currentOrgId") == orgId) {
                         userBatch.update(doc.reference, "currentOrgId", "")
                     }
+                    // 清理 employmentStatus
+                    userBatch.update(doc.reference, "employmentStatus.$orgId", FieldValue.delete())
                 }
             }
         }.await()
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
     fun observeOrganization(orgId: String): Flow<Organization?> {
         if (orgId.isBlank()) {
             return flowOf(null)
@@ -287,7 +226,6 @@ class FirebaseDataSource @Inject constructor(
             it.toObject(Organization::class.java)?.copy(id = it.id)
         }
     }
-
     suspend fun generateUniqueOrgCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         var code: String
@@ -305,7 +243,7 @@ class FirebaseDataSource @Inject constructor(
         return code
     }
 
-    // ==================== 使用者 ====================
+    // ... (createUser, createOrganizationInvite, observeAllUsers, observeUsers 保持不變) ...
     suspend fun createUser(orgId: String, user: User): Result<String> = runCatching {
         val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(user.id)
         val topLevelUserRef = firestore.collection("users").document(user.id)
@@ -321,7 +259,6 @@ class FirebaseDataSource @Inject constructor(
         }.await()
         subCollectionUserRef.id
     }
-
     suspend fun createOrganizationInvite(
         orgId: String,
         invite: OrganizationInvite
@@ -341,7 +278,6 @@ class FirebaseDataSource @Inject constructor(
             }
     }
     fun observeUsers(orgId: String): Flow<List<User>> {
-        // 改為查詢頂層的 'users' 集合，這是 App 主要的使用者資料來源
         return firestore.collection("users")
             .whereArrayContains("orgIds", orgId)
             .snapshots()
@@ -352,6 +288,7 @@ class FirebaseDataSource @Inject constructor(
             }
     }
 
+    // ... (observeOrganizationInvites, getOrganizationByInviteCode, validateAndUseInviteCode 保持不變) ...
     fun observeOrganizationInvites(orgId: String): Flow<List<OrganizationInvite>> {
         return firestore.collection("organizations/$orgId/invites")
             .snapshots()
@@ -361,7 +298,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     suspend fun getOrganizationByInviteCode(inviteCode: String): Result<Organization?> = runCatching {
         val inviteSnapshot = firestore.collectionGroup("invites")
             .whereEqualTo("inviteCode", inviteCode)
@@ -387,7 +323,6 @@ class FirebaseDataSource @Inject constructor(
 
         orgSnapshot.toObject(Organization::class.java)?.copy(id = orgSnapshot.id)
     }
-
     suspend fun validateAndUseInviteCode(inviteCode: String): Result<OrganizationInvite> = runCatching {
         val inviteQuery = firestore.collectionGroup("invites")
             .whereEqualTo("inviteCode", inviteCode)
@@ -414,8 +349,8 @@ class FirebaseDataSource @Inject constructor(
             invite
         }.await()
     }
-    // ==================== 組織加入申請 ====================
 
+    // ==================== 組織加入申請 (修改) ====================
     suspend fun createOrganizationJoinRequest(
         request: OrganizationJoinRequest
     ): Result<String> = runCatching {
@@ -424,7 +359,6 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(requestWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     fun observeOrganizationJoinRequests(orgId: String): Flow<List<OrganizationJoinRequest>> {
         return firestore.collection("organizationJoinRequests")
             .whereEqualTo("orgId", orgId)
@@ -436,7 +370,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     fun observeUserJoinRequests(userId: String): Flow<List<OrganizationJoinRequest>> {
         return firestore.collection("organizationJoinRequests")
             .whereEqualTo("userId", userId)
@@ -449,19 +382,13 @@ class FirebaseDataSource @Inject constructor(
             }
     }
 
-    suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit> = runCatching {
-        firestore.collection("organizations/$orgId/invites")
-            .document(inviteId)
-            .update("isActive", false)
-            .await()
-    }
-
-    suspend fun processJoinRequest(
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun processJoinRequest( // 修改此函數
         orgId: String,
         requestId: String,
         approve: Boolean,
         processedBy: String,
-        targetGroupId: String?
+        targetGroupId: String? // 可以指定加入的群組
     ): Result<Unit> = runCatching {
         val requestRef = firestore.collection("organizationJoinRequests").document(requestId)
 
@@ -471,18 +398,20 @@ class FirebaseDataSource @Inject constructor(
                 ?: throw IllegalArgumentException("找不到申請記錄: $requestId")
 
             val userRef = firestore.collection("users").document(request.userId)
-            val userSnapshot = transaction.get(userRef)
+            val userSnapshot = transaction.get(userRef) // 需要讀取 User 以更新 orgIds
             val user = userSnapshot.toObject(User::class.java)
 
+            // 檢查指定的 targetGroupId 是否存在 (如果有的話)
             val groupRef = if (targetGroupId != null) {
                 firestore.collection("organizations/$orgId/groups").document(targetGroupId)
             } else null
-            val groupSnapshot = groupRef?.let { transaction.get(it) }
+            val groupSnapshot = groupRef?.let { transaction.get(it) } // 讀取 Group 文件
 
             if (approve && groupRef != null && (groupSnapshot == null || !groupSnapshot.exists())) {
                 throw IllegalArgumentException("指定的群組不存在: $targetGroupId")
             }
 
+            // 更新申請狀態
             val statusUpdate = mapOf(
                 "status" to if (approve) "approved" else "rejected",
                 "processedBy" to processedBy,
@@ -491,18 +420,50 @@ class FirebaseDataSource @Inject constructor(
             transaction.update(requestRef, statusUpdate)
 
             if (approve) {
-                transaction.update(userRef, "orgIds", com.google.firebase.firestore.FieldValue.arrayUnion(orgId))
+                // 將 orgId 加入 User 的 orgIds
+                transaction.update(userRef, "orgIds", FieldValue.arrayUnion(orgId))
+                // 如果 User 沒有 currentOrgId，則設定
                 if (user?.currentOrgId.isNullOrBlank()) {
                     transaction.update(userRef, "currentOrgId", orgId)
                 }
+                // 設定預設在職狀態
+                transaction.update(userRef, "employmentStatus.$orgId", "active")
 
-                groupRef?.let {
-                    transaction.update(it, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(request.userId))
+
+                // 如果指定了群組，則將 userId 加入群組
+                groupRef?.let { targetGroupRef ->
+                    val groupData = groupSnapshot?.toObject(Group::class.java)
+
+                    // 加入 memberIds
+                    transaction.update(targetGroupRef, "memberIds", FieldValue.arrayUnion(request.userId))
+
+                    // 更新 userOrder：如果存在就加入，如果不存在則初始化
+                    if (groupData?.userOrder != null) {
+                        // 檢查 userId 是否已存在於 userOrder (避免重複加入)
+                        if (!groupData.userOrder.contains(request.userId)) {
+                            transaction.update(targetGroupRef, "userOrder", FieldValue.arrayUnion(request.userId))
+                        }else{
+
+                        }
+
+                    } else {
+                        // userOrder 不存在，使用目前的 memberIds 加上新成員來初始化
+                        val initialUserOrder = (groupData?.memberIds ?: emptyList()) + request.userId
+                        transaction.update(targetGroupRef, mapOf("userOrder" to initialUserOrder.distinct())) // distinct 確保唯一性
+                    }
                 }
             }
         }.await()
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
+    // ... (deactivateInvite, getOrganizationByCode, checkUserExists, updateUser, observeUserFromTopLevel 保持不變) ...
+    suspend fun deactivateInvite(orgId: String, inviteId: String): Result<Unit> = runCatching {
+        firestore.collection("organizations/$orgId/invites")
+            .document(inviteId)
+            .update("isActive", false)
+            .await()
+    }
     suspend fun getOrganizationByCode(orgCode: String): Result<Organization?> = runCatching {
         val snapshot = firestore.collection("organizations")
             .whereEqualTo("orgCode", orgCode)
@@ -516,22 +477,18 @@ class FirebaseDataSource @Inject constructor(
         val doc = snapshot.documents.first()
         doc.toObject(Organization::class.java)?.copy(id = doc.id)
     }
-
     suspend fun checkUserExists(userId: String): Boolean {
         val userDoc = firestore.collection("users").document(userId).get().await()
         return userDoc.exists()
     }
-
     suspend fun updateUser(userId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         val topLevelUserRef = firestore.collection("users").document(userId)
-
         val userSnapshot = topLevelUserRef.get().await()
         val user = userSnapshot.toObject(User::class.java)
         val orgIds = user?.orgIds ?: emptyList()
 
         firestore.runBatch { batch ->
             batch.set(topLevelUserRef, updates, com.google.firebase.firestore.SetOptions.merge())
-
             orgIds.forEach { orgId ->
                 if (orgId.isNotEmpty()) {
                     val subCollectionUserRef = firestore.collection("organizations/$orgId/users").document(userId)
@@ -540,7 +497,6 @@ class FirebaseDataSource @Inject constructor(
             }
         }.await()
     }
-
     fun observeUserFromTopLevel(userId: String): Flow<User?> {
         return firestore.collection("users")
             .document(userId)
@@ -554,13 +510,13 @@ class FirebaseDataSource @Inject constructor(
             }
     }
 
+    // ... (createGroup, updateGroup, updateReservationStatus, observeGroups, observeGroup 保持不變) ...
     suspend fun createGroup(orgId: String, group: Group): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/groups").document()
         val groupWithId = group.copy(id = docRef.id, orgId = orgId)
         docRef.set(groupWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     suspend fun updateGroup(orgId: String, groupId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/groups")
             .document(groupId)
@@ -577,7 +533,6 @@ class FirebaseDataSource @Inject constructor(
             .update(updates)
             .await()
     }
-
     fun observeGroups(orgId: String): Flow<List<Group>> {
         return firestore.collection("organizations/$orgId/groups")
             .snapshots()
@@ -587,7 +542,21 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-    // ==================== 預約班表 ====================
+    fun observeGroup(groupId: String): Flow<Group?> {
+        // Note: This observes across all organizations if groupId is unique globally.
+        // If groupId is only unique within an org, this needs orgId.
+        // Assuming unique globally for simplicity, otherwise adjust the query.
+        return firestore.collectionGroup("groups").whereEqualTo("id", groupId).limit(1)
+            .snapshots()
+            .map { snapshot ->
+                if (!snapshot.isEmpty) {
+                    val doc = snapshot.documents.first()
+                    doc.toObject(Group::class.java)?.copy(id = doc.id, orgId = doc.reference.parent.parent!!.id)
+                } else null
+            }
+    }
+
+    // ... (observeReservations, saveReservation 保持不變) ...
     fun observeReservations(orgId: String, groupId: String, month: String): Flow<List<Reservation>> {
         return firestore.collection("organizations/$orgId/reservations")
             .whereEqualTo("groupId", groupId)
@@ -599,17 +568,17 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     suspend fun saveReservation(orgId: String, reservation: Reservation): Result<Unit> = runCatching {
         val docRef = if (reservation.id.isNotEmpty()) {
             firestore.collection("organizations/$orgId/reservations").document(reservation.id)
         } else {
             firestore.collection("organizations/$orgId/reservations").document()
         }
-        // 使用 set 搭配 merge a, 確保能同時處理新增和更新
         docRef.set(reservation.copy(id = docRef.id).toFirestoreMap(), com.google.firebase.firestore.SetOptions.merge()).await()
     }
 
+
+    // ==================== 組別加入申請 (修改) ====================
     suspend fun createGroupJoinRequest(orgId: String, request: GroupJoinRequest): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/groupJoinRequests").document()
         val requestWithId = request.copy(id = docRef.id)
@@ -622,7 +591,6 @@ class FirebaseDataSource @Inject constructor(
             .update("status", "canceled")
             .await()
     }
-
     fun observeGroupJoinRequestsForUser(userId: String): Flow<List<GroupJoinRequest>> {
         return firestore.collectionGroup("groupJoinRequests")
             .whereEqualTo("userId", userId)
@@ -644,7 +612,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     suspend fun updateGroupJoinRequestStatus(orgId: String, requestId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/groupJoinRequests")
             .document(requestId)
@@ -652,7 +619,8 @@ class FirebaseDataSource @Inject constructor(
             .await()
     }
 
-    suspend fun updateUserGroup(
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+    suspend fun updateUserGroup( // 修改此函數，使用 Transaction
         orgId: String,
         userId: String,
         newGroupId: String,
@@ -660,28 +628,98 @@ class FirebaseDataSource @Inject constructor(
     ): Result<Unit> = runCatching {
         val groupsCollection = firestore.collection("organizations/$orgId/groups")
 
-        firestore.runBatch { batch ->
+        firestore.runTransaction { transaction ->
+            // 從舊群組移除 (如果需要)
             if (oldGroupId != null && oldGroupId != newGroupId) {
                 val oldGroupRef = groupsCollection.document(oldGroupId)
-                batch.update(oldGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayRemove(userId))
+                // 讀取舊群組資料以檢查 userOrder
+                val oldGroupSnapshot = transaction.get(oldGroupRef)
+                val oldGroupData = oldGroupSnapshot.toObject(Group::class.java)
+
+                transaction.update(oldGroupRef, "memberIds", FieldValue.arrayRemove(userId))
+                // 同時從 userOrder 移除 (如果存在)
+                if (oldGroupData?.userOrder != null) {
+                    transaction.update(oldGroupRef, "userOrder", FieldValue.arrayRemove(userId))
+                }
             }
 
+            // 加入新群組
             val newGroupRef = groupsCollection.document(newGroupId)
-            batch.update(newGroupRef, "memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
+            // 讀取新群組資料以檢查 userOrder
+            val newGroupSnapshot = transaction.get(newGroupRef)
+            val newGroupData = newGroupSnapshot.toObject(Group::class.java)
+
+            // 加入 memberIds
+            transaction.update(newGroupRef, "memberIds", FieldValue.arrayUnion(userId))
+
+            // 加入 userOrder：如果存在就加入，如果不存在則初始化
+            if (newGroupData?.userOrder != null) {
+                // 檢查 userId 是否已存在於 userOrder (避免重複加入)
+                if (!newGroupData.userOrder.contains(userId)) {
+                    transaction.update(newGroupRef, "userOrder", FieldValue.arrayUnion(userId))
+                }else{}
+            } else {
+                // userOrder 不存在，使用目前的 memberIds 加上新成員來初始化
+                val initialUserOrder = (newGroupData?.memberIds ?: emptyList()) + userId
+                transaction.update(newGroupRef, mapOf("userOrder" to initialUserOrder.distinct())) // distinct 確保唯一性
+            }
         }.await()
     }
-    suspend fun addUserToGroupAndOrg(orgId: String, groupId: String, userId: String): Result<Unit> = runCatching {
+    suspend fun addUserToGroupAndOrg( // 修改此函數，使用 Transaction
+        orgId: String,
+        groupId: String,
+        userId: String
+    ): Result<Unit> = runCatching {
         val userRef = firestore.collection("users").document(userId)
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 
-        firestore.runBatch { batch ->
-            // 1. 將 orgId 加入使用者的 orgIds 陣列中
-            batch.update(userRef, "orgIds", FieldValue.arrayUnion(orgId))
-            // 2. 將 userId 加入群組的 memberIds 陣列中
-            batch.update(groupRef, "memberIds", FieldValue.arrayUnion(userId))
-        }.await()
-    }
+        // 加入 Log
+        android.util.Log.d("DataSource", "Attempting transaction: addUserToGroupAndOrg for user $userId in group $groupId, org $orgId")
 
+        try { // 加入 try-catch
+            firestore.runTransaction { transaction ->
+                android.util.Log.d("DataSource", "Inside transaction...") // Log 進入 transaction
+
+                // 1. 讀取 Group 資料
+                val groupSnapshot = transaction.get(groupRef)
+                val groupData = groupSnapshot.toObject(Group::class.java)
+                android.util.Log.d("DataSource", "Read group snapshot. Exists: ${groupSnapshot.exists()}") // Log Group 讀取結果
+
+                // 2. 更新 User 資料
+                android.util.Log.d("DataSource", "Updating user document...") // Log 更新 User
+                transaction.update(userRef, "orgIds", FieldValue.arrayUnion(orgId))
+                transaction.update(userRef, "employmentStatus.$orgId", "active")
+
+                // 3. 更新 Group 資料
+                android.util.Log.d("DataSource", "Updating group document...") // Log 更新 Group
+                transaction.update(groupRef, "memberIds", FieldValue.arrayUnion(userId))
+
+                // 4. 更新 userOrder
+                if (groupData?.userOrder != null) {
+                    // 如果 userOrder 存在，檢查 userId 是否已存在，不存在才加入
+                    if (!groupData.userOrder.contains(userId)) {
+                        android.util.Log.d("DataSource", "Adding user to existing userOrder.") // Log
+                        transaction.update(groupRef, "userOrder", FieldValue.arrayUnion(userId))
+                    } else {
+                        android.util.Log.d("DataSource", "User already in userOrder, skipping update.") // Log
+                    }
+                } else {
+                    // userOrder 不存在，使用目前的 memberIds 加上新成員來初始化
+                    val initialUserOrder = (groupData?.memberIds ?: emptyList()) + userId
+                    android.util.Log.d("DataSource", "Initializing userOrder with: ${initialUserOrder.distinct()}") // Log
+                    transaction.update(groupRef, mapOf("userOrder" to initialUserOrder.distinct())) // distinct 確保唯一性
+                }
+                android.util.Log.d("DataSource", "Updates defined, committing transaction...") // Log 準備提交
+            }.await() // 等待交易完成
+            android.util.Log.d("DataSource", "Transaction successful for addUserToGroupAndOrg") // 成功 Log
+        } catch (e: Exception) {
+            android.util.Log.e("DataSource", "Transaction FAILED for addUserToGroupAndOrg", e) // 失敗 Log
+            throw e // 重新拋出，讓 runCatching 捕捉
+        }
+    }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+
+    // ... (claimScheduler, renewSchedulerLease, releaseScheduler, observeShiftTypeTemplates, observeShiftTypes, addCustomShiftTypeForGroup, updateShiftType, deleteShiftType 保持不變) ...
     suspend fun claimScheduler(orgId: String, groupId: String, userId: String, userName: String, leaseDuration: Long = 2 * 60 * 60 * 1000): Result<Boolean> = runCatching {
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 
@@ -704,7 +742,6 @@ class FirebaseDataSource @Inject constructor(
             true
         }.await()
     }
-
     suspend fun renewSchedulerLease(orgId: String, groupId: String, userId: String, leaseDuration: Long = 2 * 60 * 60 * 1000): Result<Boolean> = runCatching {
         val groupRef = firestore.collection("organizations/$orgId/groups").document(groupId)
 
@@ -724,7 +761,6 @@ class FirebaseDataSource @Inject constructor(
             true
         }.await()
     }
-
     suspend fun releaseScheduler(orgId: String, groupId: String): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/groups")
             .document(groupId)
@@ -735,7 +771,6 @@ class FirebaseDataSource @Inject constructor(
             ))
             .await()
     }
-
     fun observeShiftTypeTemplates(): Flow<List<ShiftType>> {
         return firestore.collection("shiftTypeTemplates")
             .snapshots()
@@ -745,9 +780,7 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     fun observeShiftTypes(orgId: String, groupId: String): Flow<List<ShiftType>> {
-        // 查詢一：組織層級的預設班別 (groupId 為 null)
         val orgShiftTypesFlow = firestore.collection("organizations/$orgId/shiftTypes")
             .whereEqualTo("groupId", null)
             .snapshots()
@@ -756,8 +789,6 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(ShiftType::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
-
-        // 查詢二：特定群組的自訂班別
         val groupShiftTypesFlow = firestore.collection("organizations/$orgId/shiftTypes")
             .whereEqualTo("groupId", groupId)
             .snapshots()
@@ -766,13 +797,10 @@ class FirebaseDataSource @Inject constructor(
                     it.toObject(ShiftType::class.java)?.copy(id = it.id, orgId = orgId)
                 }
             }
-
-        // 合併兩個 Flow 的結果
         return combine(orgShiftTypesFlow, groupShiftTypesFlow) { orgShifts, groupShifts ->
             orgShifts + groupShifts
         }
     }
-
     suspend fun addCustomShiftTypeForGroup(orgId: String, groupId: String, shiftType: ShiftType): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/shiftTypes").document()
         val newShiftType = shiftType.copy(
@@ -782,17 +810,15 @@ class FirebaseDataSource @Inject constructor(
             isTemplate = false,
             createdBy = auth.currentUser?.uid
         )
-        docRef.set(newShiftType).await() // 直接傳遞物件
+        docRef.set(newShiftType).await()
         docRef.id
     }
-
     suspend fun updateShiftType(orgId: String, shiftTypeId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/shiftTypes")
             .document(shiftTypeId)
             .update(updates)
             .await()
     }
-
     suspend fun deleteShiftType(orgId: String, shiftTypeId: String): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/shiftTypes")
             .document(shiftTypeId)
@@ -800,13 +826,14 @@ class FirebaseDataSource @Inject constructor(
             .await()
     }
 
+
+    // ... (createRequest, observeRequests, observeRuleTemplates, addRuleTemplate, updateRuleTemplate, deleteRuleTemplate, observeSchedulingRules, enableTemplateForRule, addCustomRuleForGroup, addRuleForOrg, updateRuleForOrg, deleteRuleForOrg 保持不變) ...
     suspend fun createRequest(orgId: String, request: Request): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/requests").document()
         val requestWithId = request.copy(id = docRef.id, orgId = orgId)
         docRef.set(requestWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     fun observeRequests(orgId: String): Flow<List<Request>> {
         return firestore.collection("organizations/$orgId/requests")
             .snapshots()
@@ -816,7 +843,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     fun observeRuleTemplates(): Flow<List<SchedulingRule>> {
         return firestore.collection("ruleTemplates")
             .snapshots()
@@ -826,22 +852,18 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     suspend fun addRuleTemplate(rule: SchedulingRule): Result<String> = runCatching {
         val docRef = firestore.collection("ruleTemplates").document()
         val template = rule.copy(id = docRef.id, isTemplate = true, orgId = "", groupId = null)
         docRef.set(template.toFirestoreMap()).await()
         docRef.id
     }
-
     suspend fun updateRuleTemplate(ruleId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         firestore.collection("ruleTemplates").document(ruleId).update(updates).await()
     }
-
     suspend fun deleteRuleTemplate(ruleId: String): Result<Unit> = runCatching {
         firestore.collection("ruleTemplates").document(ruleId).delete().await()
     }
-
     fun observeSchedulingRules(orgId: String, groupId: String): Flow<List<SchedulingRule>> {
         return firestore.collection("organizations/$orgId/schedulingRules")
             .whereIn("groupId", listOf(null, groupId))
@@ -852,7 +874,6 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
-
     suspend fun enableTemplateForRule(orgId: String, ruleTemplate: SchedulingRule): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
         val newRule = ruleTemplate.copy(
@@ -867,7 +888,6 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(newRule.toFirestoreMap()).await()
         docRef.id
     }
-
     suspend fun addCustomRuleForGroup(orgId: String, groupId: String, rule: SchedulingRule): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
         val newRule = rule.copy(
@@ -881,21 +901,18 @@ class FirebaseDataSource @Inject constructor(
         docRef.set(newRule.toFirestoreMap()).await()
         docRef.id
     }
-
     suspend fun addRuleForOrg(orgId: String, rule: SchedulingRule): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedulingRules").document()
         val ruleWithId = rule.copy(id = docRef.id, orgId = orgId)
         docRef.set(ruleWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/schedulingRules")
             .document(ruleId)
             .update(updates)
             .await()
     }
-
     suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/schedulingRules")
             .document(ruleId)
@@ -903,13 +920,14 @@ class FirebaseDataSource @Inject constructor(
             .await()
     }
 
+
+    // ... (createSchedule, observeSchedules, createScheduleAndAssignments, deleteScheduleAndAssignments, updateScheduleAndAssignments 保持不變) ...
     suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedules").document()
         val scheduleWithId = schedule.copy(id = docRef.id, orgId = orgId)
         docRef.set(scheduleWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     fun observeSchedules(orgId: String, groupId: String): Flow<List<Schedule>> {
         return firestore.collection("organizations/$orgId/schedules")
             .whereEqualTo("groupId", groupId)
@@ -924,44 +942,31 @@ class FirebaseDataSource @Inject constructor(
         val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)
 
         firestore.runBatch { batch ->
-            // 1. 建立 Schedule 文件
             batch.set(scheduleRef, schedule.toFirestoreMap())
-
-            // 2. 在其子集合中建立所有 Assignment 文件
             assignments.forEach { assignment ->
-                // 確保 assignment 物件中的 scheduleId 是正確的
                 val finalAssignment = assignment.copy(scheduleId = schedule.id)
                 val assignmentRef = scheduleRef.collection("assignments").document(finalAssignment.id)
                 batch.set(assignmentRef, finalAssignment.toFirestoreMap())
             }
         }.await()
-
-        // 回傳建立成功的 scheduleId
         schedule.id
     }
-    //刪除班表
     suspend fun deleteScheduleAndAssignments(orgId: String, scheduleId: String): Result<Unit> = runCatching {
         val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(scheduleId)
         val assignmentsQuery = scheduleRef.collection("assignments").get().await()
 
         firestore.runBatch { batch ->
-            // 1. 刪除所有子集合中的 assignment 文件
             for (document in assignmentsQuery.documents) {
                 batch.delete(document.reference)
             }
-            // 2. 刪除 schedule 文件本身
             batch.delete(scheduleRef)
         }.await()
     }
-
     suspend fun updateScheduleAndAssignments(orgId: String, schedule: Schedule, assignments: List<Assignment>): Result<Unit> = runCatching {
         val scheduleRef = firestore.collection("organizations/$orgId/schedules").document(schedule.id)
 
         firestore.runBatch { batch ->
-            // 1. 更新 Schedule 物件
             batch.set(scheduleRef, schedule.toFirestoreMap())
-
-            // 2. 更新 (覆蓋) 所有相關的 Assignment
             assignments.forEach { assignment ->
                 val assignmentRef = scheduleRef.collection("assignments").document(assignment.id)
                 batch.set(assignmentRef, assignment.toFirestoreMap())
@@ -969,13 +974,13 @@ class FirebaseDataSource @Inject constructor(
         }.await()
     }
 
+    // ... (createAssignment, observeAssignments, observeRotationSchedule, saveRotationSchedule 保持不變) ...
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String> = runCatching {
         val docRef = firestore.collection("organizations/$orgId/schedules/$scheduleId/assignments").document()
         val assignmentWithId = assignment.copy(id = docRef.id, scheduleId = scheduleId)
         docRef.set(assignmentWithId.toFirestoreMap()).await()
         docRef.id
     }
-
     fun observeAssignments(orgId: String, scheduleId: String): Flow<List<Assignment>> {
         return firestore.collection("organizations/$orgId/schedules/$scheduleId/assignments")
             .snapshots()
@@ -985,7 +990,28 @@ class FirebaseDataSource @Inject constructor(
                 }
             }
     }
+    fun observeRotationSchedule(orgId: String, groupId: String, month: String): Flow<Map<String, Map<String, String>>> {
+        val docPath = "organizations/$orgId/groups/$groupId/rotationSchedules/$month"
 
+        return firestore.document(docPath)
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    (snapshot.data as? Map<String, Map<String, String>>) ?: emptyMap()
+                } else {
+                    emptyMap()
+                }
+            }
+    }
+    suspend fun saveRotationSchedule(orgId: String, groupId: String, month: String, rotationSchedule: Map<String, Map<String, String>>): Result<Unit> = runCatching {
+        val docPath = "organizations/$orgId/groups/$groupId/rotationSchedules/$month"
+        firestore.document(docPath)
+            .set(rotationSchedule, com.google.firebase.firestore.SetOptions.merge())
+            .await()
+    }
+
+
+    // ... (observeManpowerPlan, saveManpowerPlan, getManpowerPlanOnce, observeAdminStatus, createTestData, deleteAllTestData 保持不變) ...
     fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?> {
         val planId = "${orgId}_${groupId}_${month}"
         return firestore.collection("organizations/$orgId/manpowerPlans")
@@ -995,14 +1021,12 @@ class FirebaseDataSource @Inject constructor(
                 snapshot.toObject(ManpowerPlan::class.java)
             }
     }
-
     suspend fun saveManpowerPlan(orgId: String, plan: ManpowerPlan): Result<Unit> = runCatching {
         firestore.collection("organizations/$orgId/manpowerPlans")
             .document(plan.id)
             .set(plan.toFirestoreMap())
             .await()
     }
-
     suspend fun getManpowerPlanOnce(orgId: String, groupId: String, month: String): ManpowerPlan? {
         val planId = "${orgId}_${groupId}_${month}"
         val snapshot = firestore.collection("organizations/$orgId/manpowerPlans")
@@ -1011,7 +1035,6 @@ class FirebaseDataSource @Inject constructor(
             .await()
         return snapshot.toObject(ManpowerPlan::class.java)
     }
-
     fun observeAdminStatus(userId: String): Flow<Boolean> {
         return firestore.collection("admins").document(userId)
             .snapshots()
@@ -1019,7 +1042,6 @@ class FirebaseDataSource @Inject constructor(
                 snapshot.exists() && snapshot.getString("role") == "superuser"
             }
     }
-
     suspend fun createTestData(dataSet: TestDataGenerator.TestDataSet): Result<Unit> = runCatching {
         val orgRef = firestore.collection("organizations").document(dataSet.organization.id)
 
@@ -1029,7 +1051,6 @@ class FirebaseDataSource @Inject constructor(
             dataSet.users.forEach { user ->
                 val userRef = orgRef.collection("users").document(user.id)
                 batch.set(userRef, user.toFirestoreMap())
-                // 同時將使用者資料寫入頂層集合，以確保資料一致性
                 val topLevelUserRef = firestore.collection("users").document(user.id)
                 batch.set(topLevelUserRef, user.toFirestoreMap())
             }
@@ -1041,7 +1062,7 @@ class FirebaseDataSource @Inject constructor(
 
             dataSet.shiftTypes.forEach { shiftType ->
                 val shiftTypeRef = orgRef.collection("shiftTypes").document(shiftType.id)
-                batch.set(shiftTypeRef, shiftType) // 直接傳遞物件
+                batch.set(shiftTypeRef, shiftType)
             }
 
             dataSet.rules.forEach { rule ->
@@ -1059,32 +1080,25 @@ class FirebaseDataSource @Inject constructor(
                     batch.set(assignmentRef, assignment.toFirestoreMap())
                 }
             }
-
-            // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
             dataSet.manpowerPlans.forEach { plan ->
                 val planRef = orgRef.collection("manpowerPlans").document(plan.id)
                 batch.set(planRef, plan.toFirestoreMap())
             }
-
             dataSet.reservations.forEach { reservation ->
                 val reservationRef = orgRef.collection("reservations").document(reservation.id)
                 batch.set(reservationRef, reservation.toFirestoreMap())
             }
-            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
         }.await()
     }
     suspend fun deleteAllTestData(): Result<Int> = runCatching {
         val testOrgPrefixes = listOf("自動生成測試公司", "完整模擬公司", "單元測試組織")
         var deletedCount = 0
-
-        // 由於 Firestore 的查詢限制，我們需要為每個前綴執行一次查詢
         for (prefix in testOrgPrefixes) {
             val querySnapshot = firestore.collection("organizations")
                 .whereGreaterThanOrEqualTo("orgName", prefix)
                 .whereLessThanOrEqualTo("orgName", prefix + '\uf8ff')
                 .get()
                 .await()
-
             for (document in querySnapshot.documents) {
                 deleteOrganizationAndSubcollections(document.id).getOrThrow()
                 deletedCount++
@@ -1092,5 +1106,26 @@ class FirebaseDataSource @Inject constructor(
         }
         deletedCount
     }
+
+    // Helper functions
+    private fun getDefaultSchedulingRules(): List<SchedulingRule> { /* ... */
+        return listOf(
+            SchedulingRule(
+                ruleName = "連續上班不超過N天", description = "避免員工因連續工作過多天而過勞。",
+                ruleType = "soft", penaltyScore = -50, isEnabled = true, parameters = mapOf("maxDays" to "6")
+            ),
+            SchedulingRule(
+                ruleName = "輪班間隔需大於N小時", description = "確保員工在兩次輪班之間有足夠的休息時間。",
+                ruleType = "hard", penaltyScore = -1000, isEnabled = true, parameters = mapOf("minHours" to "11")
+            )
+        )
+    }
+    private fun getDefaultShiftTypes(): List<ShiftType> { /* ... */
+        return listOf(
+            ShiftType(name = "放假", shortCode = "OFF", startTime = "00:00", endTime = "00:00", color = "#D0021B"),
+            ShiftType(name = "白班", shortCode = "S", startTime = "09:00", endTime = "17:00", color = "#4A90E2"),
+            ShiftType(name = "值班(夜)", shortCode = "N", startTime = "21:00", endTime = "09:00", color = "#000000"),
+            ShiftType(name = "值班(日)", shortCode = "D", startTime = "09:00", endTime = "21:00", color = "#7ED321")
+        )
+    }
 }
-// 修改結束

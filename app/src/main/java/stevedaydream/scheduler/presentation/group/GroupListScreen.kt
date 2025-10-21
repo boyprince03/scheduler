@@ -1,3 +1,4 @@
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 // scheduler/presentation/group/GroupListScreen.kt
 package stevedaydream.scheduler.presentation.group
 
@@ -20,12 +21,10 @@ import stevedaydream.scheduler.data.model.Group
 fun GroupListScreen(
     orgId: String,
     viewModel: GroupListViewModel = hiltViewModel(),
-    onGroupClick: (String) -> Unit,
+    onGroupClick: (String) -> Unit, // <<-- 恢復 onGroupClick 參數，用於導航到 ScheduleScreen
     onBackClick: () -> Unit,
     onNavigateToInviteManagement: (String) -> Unit,
-    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-    onNavigateToMemberList: (String) -> Unit
-    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+    onNavigateToMemberList: (orgId: String, groupId: String) -> Unit // 保持管理成員的導航
 ) {
     val groups by viewModel.groups.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -44,11 +43,7 @@ fun GroupListScreen(
                     }
                 },
                 actions = {
-                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-                    IconButton(onClick = { onNavigateToMemberList(orgId) }) {
-                        Icon(Icons.Default.ManageAccounts, contentDescription = "管理成員")
-                    }
-                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+                    // 移除 TopAppBar 上的管理成員按鈕
                     IconButton(onClick = { onNavigateToInviteManagement(orgId) }) {
                         Icon(Icons.Default.GroupAdd, contentDescription = "邀請成員")
                     }
@@ -66,6 +61,7 @@ fun GroupListScreen(
         }
     ) { padding ->
         if (groups.isEmpty()) {
+            // ... (空白狀態不變) ...
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -96,13 +92,15 @@ fun GroupListScreen(
                 items(groups) { group ->
                     GroupCard(
                         group = group,
-                        onClick = { onGroupClick(group.id) }
+                        // 點擊卡片主體，觸發 onGroupClick (導航到 ScheduleScreen)
+                        onClick = { onGroupClick(group.id) },
+                        // 傳入管理成員的回呼函數
+                        onManageMembersClick = { onNavigateToMemberList(orgId, group.id) }
                     )
                 }
             }
         }
     }
-
     if (showCreateDialog) {
         CreateGroupDialog(
             onDismiss = { showCreateDialog = false },
@@ -117,16 +115,19 @@ fun GroupListScreen(
 @Composable
 fun GroupCard(
     group: Group,
-    onClick: () -> Unit
+    onClick: () -> Unit, // 卡片主體點擊事件 (去排班頁面)
+    onManageMembersClick: () -> Unit // 管理成員按鈕點擊事件
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
+        // 移除 Card 的 clickable，讓 Row 處理點擊
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            // 將 clickable 移到 Row 上，這樣管理按鈕可以獨立點擊
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -165,10 +166,15 @@ fun GroupCard(
                     }
                 }
             }
+            // 新增：管理成員的 IconButton
+            IconButton(onClick = onManageMembersClick) {
+                Icon(Icons.Default.ManageAccounts, contentDescription = "管理成員")
+            }
         }
     }
 }
 
+// CreateGroupDialog 保持不變
 @Composable
 fun CreateGroupDialog(
     onDismiss: () -> Unit,
@@ -205,3 +211,4 @@ fun CreateGroupDialog(
         }
     )
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

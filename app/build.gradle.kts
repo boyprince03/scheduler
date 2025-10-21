@@ -140,4 +140,5 @@ dependencies {
 
     // FileProvider (通常已包含在 androidx.core 中)
     implementation("androidx.core:core-ktx:1.12.0")
+    implementation("javax.inject:javax.inject:1")
 }

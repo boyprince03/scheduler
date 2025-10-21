@@ -7,6 +7,8 @@ import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 import java.util.Date
+import androidx.room.TypeConverter
+
 
 // ==================== 組織 ====================
 data class Features(
@@ -51,6 +53,90 @@ data class Organization(
         )
     }
 }
+// ==================== 輪替規則設定 ====================
+// 这个 data class 不直接存入 Room，而是作为 GroupSettings 的一部分或独立存在 Firestore
+data class RotationSetting(
+    val daysOfWeek: Set<Int> = emptySet(), // 0=週日, 1=週一...6=週六
+    // val order: String = "ascending", // 暫時只支援升冪
+    val nextStartIndex: Int = 0 // 下次輪替從 orderedUsers 的哪個索引開始
+) {
+    // Firestore 需要無參數建構子
+    constructor() : this(emptySet(), 0)
+
+    fun toFirestoreMap(): Map<String, Any> {
+        return mapOf(
+            "daysOfWeek" to daysOfWeek.toList(), // Firestore 不直接支援 Set，存為 List
+            "nextStartIndex" to nextStartIndex
+        )
+    }
+
+    companion object {
+        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 ▼▼▼▼▼▼▼▼▼▼▼▼
+        // 确保传入的 map 的 value 是非空的 Any
+        fun fromFirestoreMap(map: Map<String, Any>): RotationSetting {
+            // ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+            val daysList = (map["daysOfWeek"] as? List<*>)?.mapNotNull { it as? Long } ?: emptyList()
+            val nextIndex = (map["nextStartIndex"] as? Long)?.toInt() ?: 0
+            return RotationSetting(
+                daysOfWeek = daysList.map { it.toInt() }.toSet(), // 從 List 轉回 Set
+                nextStartIndex = nextIndex
+            )
+        }
+    }
+}
+
+// 用於儲存所有輪替規則的容器，可以存在 Group 文件下或獨立文件
+// 用於儲存所有輪替規則的容器，可以存在 Group 文件下或獨立文件
+data class RotationSettingsContainer(
+    // Map<ShiftTypeId, RotationSetting>
+    val rules: Map<String, RotationSetting> = emptyMap()
+) {
+    fun toFirestoreMap(): Map<String, Any> {
+        return mapOf(
+            "rules" to rules.mapValues { it.value.toFirestoreMap() }
+        )
+    }
+    companion object {
+        fun fromFirestoreMap(map: Map<String, Any>): RotationSettingsContainer {
+            val rulesMapData = map["rules"] as? Map<*, *> ?: emptyMap<Any,Any>()
+            val rules = rulesMapData.mapNotNull { (key, value) ->
+                if (key is String && value is Map<*, *>) {
+                    // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點 ▼▼▼▼▼▼▼▼▼▼▼▼
+                    // 安全地轉換 Map<*, *> 為 Map<String, Any>，过滤掉 value 为 null 的情况
+                    val settingMap = value.mapNotNull { (k, v) ->
+                        if (k is String && v != null) k to v else null // 确保 v 不为 null
+                    }.toMap() // settingMap 现在是 Map<String, Any>
+                    key to RotationSetting.fromFirestoreMap(settingMap) // 传入 Map<String, Any>
+                    // ▲▲▲▲▲▲▲▲▲▲▲▲ 修正結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+                } else {
+                    null
+                }
+            }.toMap()
+            return RotationSettingsContainer(rules)
+        }
+    }
+}
+
+
+// 在 Converters class 中加入 Set<Int> 的轉換器 (如果需要存 Room 的話，但目前規則存 Firestore)
+class Converters {
+    // ... (其他 TypeConverter 保持不變) ...
+
+    @TypeConverter
+    fun fromIntSet(value: Set<Int>?): String {
+        return value?.joinToString(",") ?: ""
+    }
+
+    @TypeConverter
+    fun toIntSet(value: String): Set<Int> {
+        if (value.isEmpty()) return emptySet()
+        return try {
+            value.split(",").mapNotNull { it.toIntOrNull() }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+}
 
 // ==================== 使用者 ====================
 @Entity(tableName = "users")
@@ -88,7 +174,11 @@ data class Group(
     val schedulerName: String? = null,
     val schedulerLeaseExpiresAt: Date? = null,
     val reservationStatus: String = "inactive", // "inactive", "active", "closed"
-    val reservationMonth: String? = null
+    val reservationMonth: String? = null,
+    // 新增：用於醫院策略的使用者排序列表 (儲存 User ID)
+    val userOrder: List<String>? = null,
+    // 新增：用於輪替的狀態 (Map<ShiftTypeId, nextUserIndex>)
+    val rotationState: Map<String, Int>? = null
 ) {
     fun toFirestoreMap(): Map<String, Any> = buildMap {
         put("groupName", groupName)
@@ -98,6 +188,8 @@ data class Group(
         schedulerLeaseExpiresAt?.let { put("schedulerLeaseExpiresAt", it) }
         put("reservationStatus", reservationStatus)
         reservationMonth?.let { put("reservationMonth", it) }
+        userOrder?.let { put("userOrder", it) } // 新增
+        rotationState?.let { put("rotationState", it) } // 新增
     }
 
     fun isSchedulerActive(): Boolean {

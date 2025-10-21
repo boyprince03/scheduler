@@ -103,7 +103,9 @@ interface SchedulerRepository {
     suspend fun updateRuleForOrg(orgId: String, ruleId: String, updates: Map<String, Any>): Result<Unit>
     suspend fun deleteRuleForOrg(orgId: String, ruleId: String): Result<Unit>
 
-
+    // 新增：觀察和儲存輪替規則設定
+    fun observeRotationSettings(orgId: String, groupId: String): Flow<RotationSettingsContainer?>
+    suspend fun saveRotationSettings(orgId: String, groupId: String, settings: RotationSettingsContainer): Result<Unit>
 
     // ==================== 班表 ====================
     suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String>
@@ -118,6 +120,14 @@ interface SchedulerRepository {
     // ==================== 班表分配 ====================
     suspend fun createAssignment(orgId: String, scheduleId: String, assignment: Assignment): Result<String>
     fun observeAssignments(orgId: String, scheduleId: String): Flow<List<Assignment>>
+
+    // 觀察輪替預排班表
+
+    // 新增：儲存計算好的輪替預排班表
+    suspend fun saveRotationSchedule(orgId: String, groupId: String, month: String, rotationSchedule: Map<String, Map<String, String>>): Result<Unit>
+    // 新增：觀察輪替預排班表
+    fun observeRotationSchedule(orgId: String, groupId: String, month: String): Flow<Map<String, Map<String, String>>>
+
     // ==================== 人力規劃 ====================
     fun observeManpowerPlan(orgId: String, groupId: String, month: String): Flow<ManpowerPlan?>
     suspend fun getManpowerPlanOnce(orgId: String, groupId: String, month: String): ManpowerPlan? // ✅ 新增此行

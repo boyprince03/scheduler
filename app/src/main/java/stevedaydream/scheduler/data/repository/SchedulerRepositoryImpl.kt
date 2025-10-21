@@ -459,7 +459,17 @@ class SchedulerRepositoryImpl @Inject constructor(
         return remoteDataSource.deleteRuleForOrg(orgId, ruleId)
     }
 
+    // 新增：觀察輪替規則設定
+    override fun observeRotationSettings(orgId: String, groupId: String): Flow<RotationSettingsContainer?> {
+        // TODO: 未來可以考慮加入本地快取 (例如存在 Group entity 或獨立 entity)
+        return remoteDataSource.observeRotationSettings(orgId, groupId)
+    }
 
+    // 新增：儲存輪替規則設定
+    override suspend fun saveRotationSettings(orgId: String, groupId: String, settings: RotationSettingsContainer): Result<Unit> {
+        // TODO: 如果有本地快取，也需要更新
+        return remoteDataSource.saveRotationSettings(orgId, groupId, settings)
+    }
 
     // ==================== 班表 ====================
     override suspend fun createSchedule(orgId: String, schedule: Schedule): Result<String> {
@@ -520,6 +530,16 @@ class SchedulerRepositoryImpl @Inject constructor(
         }
         // UI 層永遠從本地資料庫讀取，確保了單一資料來源
         return database.assignmentDao().getAssignmentsBySchedule(scheduleId)
+    }
+    // 觀察輪替預排班表 (目前直接從遠端讀取)
+    override fun observeRotationSchedule(orgId: String, groupId: String, month: String): Flow<Map<String, Map<String, String>>> {
+        return remoteDataSource.observeRotationSchedule(orgId, groupId, month)
+    }
+
+    // 新增：儲存計算好的輪替預排班表
+    override suspend fun saveRotationSchedule(orgId: String, groupId: String, month: String, rotationSchedule: Map<String, Map<String, String>>): Result<Unit> {
+        // TODO: 如果需要本地快取，可以在此處加入更新 Room 的邏輯
+        return remoteDataSource.saveRotationSchedule(orgId, groupId, month, rotationSchedule)
     }
 
     // ==================== 人力規劃 ====================

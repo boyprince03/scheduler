@@ -324,7 +324,7 @@ interface GroupJoinRequestDao {
         OrganizationJoinRequest::class,   // ✨ 新增
         GroupJoinRequest::class           // ✨ 新增
     ],
-    version = 19, // ✨ 版本號記得更新
+    version = 20, // ✨ 版本號記得更新
     exportSchema = false
 )
 @TypeConverters(Converters::class)
