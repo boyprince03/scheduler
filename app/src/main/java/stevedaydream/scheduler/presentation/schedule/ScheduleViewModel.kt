@@ -14,9 +14,12 @@ import stevedaydream.scheduler.domain.repository.SchedulerRepository
 import stevedaydream.scheduler.domain.scheduling.RotationRuleConfig // 引入 RotationRuleConfig
 import stevedaydream.scheduler.domain.scheduling.RotationScheduler
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator // ✅ 1. 引入 ScheduleGenerator
+// ✅ 引入 SchedulingStrategyType Enum
+import stevedaydream.scheduler.domain.scheduling.SchedulingStrategyType
 import javax.inject.Inject
 
-// ... (SchedulingStrategy Enum 保持不變) ...
+// ✅ 將 SchedulingStrategy Enum 移到這裡或共用檔案，讓 ViewModel 也能訪問
+//    或者直接在 ScheduleGenerator.kt 中定義並匯入 SchedulingStrategyType
 enum class SchedulingStrategy(val displayName: String) {
     GENERAL("通用設定"),
     HOSPITAL("醫院設定")
@@ -34,13 +37,16 @@ class ScheduleViewModel @Inject constructor(
     val currentOrgId: String = savedStateHandle.get<String>("orgId")!!
     val currentGroupId: String = savedStateHandle.get<String>("groupId")!!
 
-    // --- Existing States (保持不變) ---
+    // --- Existing States ---
     private val _group = MutableStateFlow<Group?>(null)
     val group: StateFlow<Group?> = _group.asStateFlow()
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
-    private val _selectedStrategy = MutableStateFlow(SchedulingStrategy.GENERAL)
-    val selectedStrategy: StateFlow<SchedulingStrategy> = _selectedStrategy.asStateFlow()
+    // ✅ _selectedStrategy 應使用 SchedulingStrategyType
+    private val _selectedStrategy = MutableStateFlow(SchedulingStrategyType.HOSPITAL_GREEDY) // 預設值改為 Enum
+    val selectedStrategy: StateFlow<SchedulingStrategyType> = _selectedStrategy.asStateFlow()
+
+    // ... (其他狀態保持不變) ...
     val isScheduler: StateFlow<Boolean> = _group.map { group ->
         group?.schedulerId == auth.currentUser?.uid
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -68,23 +74,14 @@ class ScheduleViewModel @Inject constructor(
     val isCalculatingRotation: StateFlow<Boolean> = _isCalculatingRotation.asStateFlow()
     private val _rotationCalculationResult = MutableSharedFlow<Result<Unit>>()
     val rotationCalculationResult: SharedFlow<Result<Unit>> = _rotationCalculationResult.asSharedFlow()
-
-    // --- ✅ 3. 新增預覽相關狀態 ---
     private val _isPreviewGenerating = MutableStateFlow(false)
     val isPreviewGenerating: StateFlow<Boolean> = _isPreviewGenerating.asStateFlow()
-
-    // 儲存預覽計算出的輪班結果 (不含 group state 更新)
     private val _previewRotationSchedule = MutableStateFlow<Map<String, Map<String, String>>?>(null)
     val previewRotationSchedule: StateFlow<Map<String, Map<String, String>>?> = _previewRotationSchedule.asStateFlow()
-
-    // 儲存預覽生成的完整班表結果
     private val _previewGeneratedSchedule = MutableStateFlow<ScheduleGenerator.ScheduleGenerationResult?>(null)
     val previewGeneratedSchedule: StateFlow<ScheduleGenerator.ScheduleGenerationResult?> = _previewGeneratedSchedule.asStateFlow()
-
-    // 用於顯示預覽錯誤訊息
     private val _previewError = MutableSharedFlow<String>()
     val previewError = _previewError.asSharedFlow()
-
 
     init {
         loadGroupData()
@@ -100,7 +97,6 @@ class ScheduleViewModel @Inject constructor(
                 }
             }
         }
-
         viewModelScope.launch {
             repository.observeGroup(currentGroupId).collect { groupData ->
                 _group.value = groupData
@@ -109,13 +105,11 @@ class ScheduleViewModel @Inject constructor(
                 }
             }
         }
-
         viewModelScope.launch {
             repository.observeSchedules(currentOrgId, currentGroupId).collect { scheduleList ->
-                _schedules.value = scheduleList
+                _schedules.value = scheduleList.sortedByDescending { it.month } // 確保排序
             }
         }
-
         viewModelScope.launch {
             combine(
                 repository.observeGroup(currentGroupId).filterNotNull(),
@@ -130,20 +124,16 @@ class ScheduleViewModel @Inject constructor(
                 _orderedUsers.value = orderedGroupMembers
             }
         }
-
-
         viewModelScope.launch {
             repository.observeShiftTypes(currentOrgId, currentGroupId).collect { types ->
                 _shiftTypes.value = types
             }
         }
-
         viewModelScope.launch {
             repository.observeRequests(currentOrgId).collect { reqs ->
                 _requests.value = reqs
             }
         }
-
         viewModelScope.launch {
             repository.observeSchedulingRules(currentOrgId, currentGroupId).collect { ruleList ->
                 _rules.value = ruleList
@@ -160,14 +150,14 @@ class ScheduleViewModel @Inject constructor(
         }
     }
 
-
-    fun selectStrategy(strategy: SchedulingStrategy) {
-        // ... (保持不變) ...
+    // ✅ selectStrategy 應使用 SchedulingStrategyType
+    fun selectStrategy(strategy: SchedulingStrategyType) {
         _selectedStrategy.value = strategy
     }
 
+
     fun toggleReservation(month: String, currentStatus: String) {
-        // ... (保持不變, 觸發 calculateAndSaveRotations) ...
+        // ... (保持不變) ...
         viewModelScope.launch {
             val newStatus = when (currentStatus) {
                 "inactive" -> "active"
@@ -175,10 +165,7 @@ class ScheduleViewModel @Inject constructor(
                 "closed" -> "active"
                 else -> "inactive"
             }
-            // 先更新狀態
             val updateResult = repository.updateReservationStatus(currentOrgId, currentGroupId, month, newStatus)
-
-            // 如果是啟動預約 (inactive -> active) 且更新成功，則觸發輪替計算
             if (currentStatus == "inactive" && newStatus == "active" && updateResult.isSuccess) {
                 calculateAndSaveRotations(month)
             }
@@ -194,146 +181,85 @@ class ScheduleViewModel @Inject constructor(
                 val ordered = _orderedUsers.value
                 val shifts = _shiftTypes.value
                 val settings = _rotationSettings.value?.rules ?: emptyMap()
-
                 if (groupData == null || ordered.isEmpty() || shifts.isEmpty() || settings.isEmpty()) {
-                    Log.w("ScheduleVM", "計算輪替缺少必要資料 (group, users, shifts, or settings)")
-                    _rotationCalculationResult.emit(Result.failure(Exception("缺少必要資料")))
+                    _rotationCalculationResult.emit(Result.failure(Exception("缺少計算輪替的必要資料")))
                     return@launch
                 }
-
-                // 將 RotationSettingsContainer 轉換為 RotationScheduler 需要的 Map<String, RotationRuleConfig>
                 val rotationRulesConfig = settings.mapValues { (shiftId, setting) ->
-                    stevedaydream.scheduler.domain.scheduling.RotationRuleConfig(shiftTypeId = shiftId, daysOfWeek = setting.daysOfWeek)
+                    RotationRuleConfig(shiftTypeId = shiftId, daysOfWeek = setting.daysOfWeek)
                 }
-
                 val initialRotationState = groupData.rotationState ?: emptyMap()
-
-
-                // 執行計算
-                val result = rotationScheduler.calculateRotations(
-                    month = month,
-                    orderedUsers = ordered,
-                    shiftTypes = shifts,
-                    rotationRules = rotationRulesConfig,
-                    initialRotationState = initialRotationState
-                )
-
-                // 儲存預排班結果
-                val saveScheduleResult = repository.saveRotationSchedule(
-                    currentOrgId,
-                    currentGroupId,
-                    month,
-                    result.preScheduledRotations
-                )
-
-                if (saveScheduleResult.isFailure) {
-                    throw saveScheduleResult.exceptionOrNull() ?: Exception("儲存輪替班表失敗")
-                }
-
-                // 更新 Group 的 rotationState (下個月的起始狀態)
-                val updateGroupResult = repository.updateGroup(
-                    currentOrgId,
-                    currentGroupId,
-                    mapOf("rotationState" to result.nextRotationState) // 直接更新 rotationState 欄位
-                )
-
-                if (updateGroupResult.isFailure) {
-                    throw updateGroupResult.exceptionOrNull() ?: Exception("更新輪替狀態失敗")
-                }
-
-                _rotationCalculationResult.emit(Result.success(Unit)) // 發送成功結果
-
+                val result = rotationScheduler.calculateRotations(month, ordered, shifts, rotationRulesConfig, initialRotationState)
+                val saveScheduleResult = repository.saveRotationSchedule(currentOrgId, currentGroupId, month, result.preScheduledRotations)
+                if (saveScheduleResult.isFailure) throw saveScheduleResult.exceptionOrNull()!!
+                val updateGroupResult = repository.updateGroup(currentOrgId, currentGroupId, mapOf("rotationState" to result.nextRotationState))
+                if (updateGroupResult.isFailure) throw updateGroupResult.exceptionOrNull()!!
+                _rotationCalculationResult.emit(Result.success(Unit))
             } catch (e: Exception) {
                 Log.e("ScheduleVM", "計算或儲存輪替失敗", e)
-                _rotationCalculationResult.emit(Result.failure(e)) // 發送失敗結果
+                _rotationCalculationResult.emit(Result.failure(e))
             } finally {
                 _isCalculatingRotation.value = false
             }
         }
     }
 
-
+    // ... (claimScheduler, addSchedulerToGroup, releaseScheduler, renewLease 保持不變) ...
     fun claimScheduler() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
-            repository.claimScheduler(
-                orgId = currentOrgId,
-                groupId = currentGroupId,
-                userId = currentUser.uid,
-                userName = currentUser.displayName ?: currentUser.email ?: "未命名使用者"
-            )
+            repository.claimScheduler(currentOrgId, currentGroupId, currentUser.uid, currentUser.displayName ?: currentUser.email ?: "未命名")
         }
     }
-
     fun addSchedulerToGroup() {
         viewModelScope.launch {
             auth.currentUser?.uid?.let { userId ->
-                repository.addUserToGroupAndOrg(
-                    orgId = currentOrgId,
-                    groupId = currentGroupId,
-                    userId = userId
-                )
+                repository.addUserToGroupAndOrg(currentOrgId, currentGroupId, userId)
             }
         }
     }
-
     fun releaseScheduler() {
         viewModelScope.launch {
             repository.releaseScheduler(currentOrgId, currentGroupId)
         }
     }
-
     private fun renewLease() {
         viewModelScope.launch {
             val currentUser = auth.currentUser ?: return@launch
-            repository.renewSchedulerLease(
-                orgId = currentOrgId,
-                groupId = currentGroupId,
-                userId = currentUser.uid
-            )
+            repository.renewSchedulerLease(currentOrgId, currentGroupId, currentUser.uid)
         }
     }
 
-    // --- ✅ 4. 新增：生成預覽班表 (包含輪替計算，但不儲存) ---
+    // --- ✅ 修改 generatePreviewSchedule ---
     fun generatePreviewSchedule(month: String) {
         viewModelScope.launch {
             _isPreviewGenerating.value = true
-            _previewGeneratedSchedule.value = null // 清除舊預覽
-            _previewRotationSchedule.value = null // 清除舊預覽
-            var calculatedRotations: Map<String, Map<String, String>>? = null // 暫存輪替結果
+            _previewGeneratedSchedule.value = null
+            _previewRotationSchedule.value = null
+            var calculatedRotations: Map<String, Map<String, String>>? = null
 
             try {
-                // --- Step 1: 計算輪替 (但不儲存) ---
-                if (_selectedStrategy.value == SchedulingStrategy.HOSPITAL) {
+                // Step 1: Calculate rotations (if hospital strategy)
+                if (_selectedStrategy.value == SchedulingStrategyType.HOSPITAL_GREEDY || _selectedStrategy.value == SchedulingStrategyType.HOSPITAL_BACKTRACKING) { // Check both hospital types
+                    // ... (rotation calculation logic remains the same) ...
                     val groupData = _group.value
                     val ordered = _orderedUsers.value
                     val shifts = _shiftTypes.value
                     val settings = _rotationSettings.value?.rules ?: emptyMap()
-
                     if (groupData == null || ordered.isEmpty() || shifts.isEmpty() || settings.isEmpty()) {
                         throw Exception("醫院策略缺少輪替計算資料")
                     }
-
-                    val rotationRulesConfig = settings.mapValues { (shiftId, setting) ->
-                        RotationRuleConfig(shiftTypeId = shiftId, daysOfWeek = setting.daysOfWeek)
-                    }
+                    val rotationRulesConfig = settings.mapValues { (shiftId, setting) -> RotationRuleConfig(shiftTypeId = shiftId, daysOfWeek = setting.daysOfWeek) }
                     val initialRotationState = groupData.rotationState ?: emptyMap()
-
-                    val rotationResult = rotationScheduler.calculateRotations(
-                        month = month,
-                        orderedUsers = ordered,
-                        shiftTypes = shifts,
-                        rotationRules = rotationRulesConfig,
-                        initialRotationState = initialRotationState
-                    )
+                    val rotationResult = rotationScheduler.calculateRotations(month, ordered, shifts, rotationRulesConfig, initialRotationState)
                     calculatedRotations = rotationResult.preScheduledRotations
-                    _previewRotationSchedule.value = calculatedRotations // 儲存輪替預覽
+                    _previewRotationSchedule.value = calculatedRotations
                 } else {
-                    calculatedRotations = emptyMap() // 非醫院策略，輪替為空
+                    calculatedRotations = emptyMap()
                     _previewRotationSchedule.value = calculatedRotations
                 }
 
-                // --- Step 2: 生成班表 (使用計算出的輪替，但不儲存) ---
+                // Step 2: Generate schedule using the calculated rotations
                 val manpowerPlan = repository.getManpowerPlanOnce(currentOrgId, currentGroupId, month)
                 val reservations = repository.observeReservations(currentOrgId, currentGroupId, month).first()
                 val enabledRules = _rules.value.filter { it.isEnabled }
@@ -348,42 +274,34 @@ class ScheduleViewModel @Inject constructor(
                     reservations = reservations,
                     rules = enabledRules,
                     manpowerPlan = manpowerPlan,
-                    strategy = _selectedStrategy.value.name.lowercase(), // "general" or "hospital"
-                    orderedUsers = if (_selectedStrategy.value == SchedulingStrategy.HOSPITAL) _orderedUsers.value else null,
-                    preScheduledRotations = calculatedRotations // 使用計算出的輪替
+                    // ✅ 直接傳遞 Enum
+                    strategy = _selectedStrategy.value,
+                    orderedUsers = if (_selectedStrategy.value == SchedulingStrategyType.HOSPITAL_GREEDY || _selectedStrategy.value == SchedulingStrategyType.HOSPITAL_BACKTRACKING) _orderedUsers.value else null,
+                    preScheduledRotations = calculatedRotations
                 )
-
-                _previewGeneratedSchedule.value = generatorResult // 儲存完整預覽結果
+                _previewGeneratedSchedule.value = generatorResult
 
             } catch (e: Exception) {
                 Log.e("ScheduleVM", "預覽生成失敗 (${_selectedStrategy.value})", e)
-                _previewError.emit("預覽生成失敗: ${e.message}") // 發送錯誤事件
+                _previewError.emit("預覽生成失敗: ${e.message}")
             } finally {
                 _isPreviewGenerating.value = false
             }
         }
     }
 
-    // --- ✅ 5. 新增：儲存預覽的班表 ---
+    // ... (savePreviewSchedule 保持不變) ...
     fun savePreviewSchedule() {
         val previewResult = _previewGeneratedSchedule.value ?: return
         viewModelScope.launch {
-            _isGenerating.value = true // 使用主生成狀態，避免重複按鈕
-            _previewGeneratedSchedule.value = null // 清除預覽
+            _isGenerating.value = true
+            _previewGeneratedSchedule.value = null
             _previewRotationSchedule.value = null
-
             try {
-                // 直接使用預覽結果中的 Schedule 和 Assignments 進行儲存
-                repository.createScheduleAndAssignments(
-                    orgId = currentOrgId,
-                    schedule = previewResult.schedule,
-                    assignments = previewResult.assignments
-                ).getOrThrow() // 如果儲存失敗會拋出異常
-
-                _generateSuccess.emit(Unit) // 發送成功事件
+                repository.createScheduleAndAssignments(currentOrgId, previewResult.schedule, previewResult.assignments).getOrThrow()
+                _generateSuccess.emit(Unit)
             } catch (e: Exception) {
                 Log.e("ScheduleVM", "儲存預覽班表失敗", e)
-                // 可以發送一個儲存失敗的事件或更新 UI State
                 _previewError.emit("儲存班表失敗: ${e.message}")
             } finally {
                 _isGenerating.value = false
@@ -391,37 +309,34 @@ class ScheduleViewModel @Inject constructor(
         }
     }
 
-    // --- ✅ 6. 新增：清除預覽狀態 ---
+    // ... (clearPreview 保持不變) ...
     fun clearPreview() {
         _previewGeneratedSchedule.value = null
         _previewRotationSchedule.value = null
     }
 
-
-    // --- 原有的 generateSmartSchedule (實際生成並儲存) ---
+    // --- ✅ 修改 generateSmartSchedule ---
     fun generateSmartSchedule(month: String) {
-        // ... (保持不變，但注意策略名稱傳遞) ...
         viewModelScope.launch {
             _isGenerating.value = true
             try {
-                // 通用需要的資料
+                // Common data needed
                 val manpowerPlan = repository.getManpowerPlanOnce(currentOrgId, currentGroupId, month)
                 val reservations = repository.observeReservations(currentOrgId, currentGroupId, month).first()
                 val enabledRules = _rules.value.filter { it.isEnabled }
                 var rotationScheduleData: Map<String, Map<String, String>>? = null
 
-                // 如果是醫院策略，先讀取已儲存的 (或剛計算儲存的) 輪替班表
-                if (_selectedStrategy.value == SchedulingStrategy.HOSPITAL) {
+                // Read rotation schedule if hospital strategy
+                if (_selectedStrategy.value == SchedulingStrategyType.HOSPITAL_GREEDY || _selectedStrategy.value == SchedulingStrategyType.HOSPITAL_BACKTRACKING) { // Check both hospital types
                     rotationScheduleData = try {
                         repository.observeRotationSchedule(currentOrgId, currentGroupId, month).first()
                     } catch (e: Exception) {
                         Log.w("ScheduleVM", "無法讀取 RotationSchedule: ${e.message}, 使用空資料。")
-                        emptyMap<String, Map<String, String>>()
+                        emptyMap()
                     }
                 }
 
-
-                // 根據選擇的策略呼叫 ScheduleGenerator
+                // Call generator with selected strategy
                 val result = scheduleGenerator.generateSchedule(
                     orgId = currentOrgId,
                     groupId = currentGroupId,
@@ -432,34 +347,31 @@ class ScheduleViewModel @Inject constructor(
                     reservations = reservations,
                     rules = enabledRules,
                     manpowerPlan = manpowerPlan,
-                    strategy = _selectedStrategy.value.name.lowercase(), // "general" or "hospital"
-                    orderedUsers = if (_selectedStrategy.value == SchedulingStrategy.HOSPITAL) _orderedUsers.value else null,
-                    preScheduledRotations = rotationScheduleData // 傳入讀取的輪替資料
+                    // ✅ 直接傳遞 Enum
+                    strategy = _selectedStrategy.value,
+                    orderedUsers = if (_selectedStrategy.value == SchedulingStrategyType.HOSPITAL_GREEDY || _selectedStrategy.value == SchedulingStrategyType.HOSPITAL_BACKTRACKING) _orderedUsers.value else null,
+                    preScheduledRotations = rotationScheduleData
                 )
 
-
-                repository.createScheduleAndAssignments(
-                    orgId = currentOrgId,
-                    schedule = result.schedule,
-                    assignments = result.assignments
-                ).getOrThrow()
-
+                // Save the result
+                repository.createScheduleAndAssignments(currentOrgId, result.schedule, result.assignments).getOrThrow()
                 _generateSuccess.emit(Unit)
+
             } catch (e: Exception) {
                 Log.e("ScheduleVM", "智慧排班生成或儲存失敗 (${_selectedStrategy.value})", e)
+                // Emit error or update UI state
             } finally {
                 _isGenerating.value = false
             }
         }
     }
 
+    // ... (deleteSchedule 保持不變) ...
     fun deleteSchedule(scheduleId: String) {
-        // ... (保持不變) ...
         viewModelScope.launch {
-            repository.deleteSchedule(currentOrgId, scheduleId)
-                .onFailure {
-                    println("❌ 刪除班表失敗: ${it.message}")
-                }
+            repository.deleteSchedule(currentOrgId, scheduleId).onFailure {
+                println("❌ 刪除班表失敗: ${it.message}")
+            }
         }
     }
 }

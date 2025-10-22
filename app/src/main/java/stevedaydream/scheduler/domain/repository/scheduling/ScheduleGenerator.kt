@@ -1,187 +1,243 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 完整程式碼 ▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
-import android.util.Log // 引入 Log
+import android.util.Log
 import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule
-// ✅ 修正 import，避免與 data class 衝突
-// import stevedaydream.scheduler.domain.repository.scheduling.rules.SchedulingRule as RuleInterface
-import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
-
-import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
-import stevedaydream.scheduler.domain.scheduling.rules.RuleContext // 引入 RuleContext
-import stevedaydream.scheduler.domain.scheduling.rules.RuleViolation
-// ✅ 正確 import SchedulingRule interface
+// Explicit type aliases to resolve ambiguity
+import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
 import stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule as SchedulingRuleInterface
+import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
+import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
+import stevedaydream.scheduler.domain.scheduling.rules.RuleContext
+import stevedaydream.scheduler.domain.scheduling.rules.RuleViolation
 import stevedaydream.scheduler.util.DateUtils
 import java.util.*
 import kotlin.math.floor
+
+
+// SchedulingStrategyType Enum remains the same
+enum class SchedulingStrategyType {
+    HOSPITAL_BACKTRACKING, // 醫院策略 - 回溯法
+    GENERAL, // 通用策略
+    HOSPITAL_GREEDY // 醫院策略 - 貪婪法
+}
 
 /**
  * 排班生成器，支援不同的排班策略
  */
 class ScheduleGenerator {
 
-    // --- Common Data Structures ---
+    // ScheduleGenerationResult remains the same
     data class ScheduleGenerationResult(
         val schedule: Schedule,
         val assignments: List<Assignment>,
-        val score: Int, // 最終基於 RuleEngine 的評分
-        val violations: List<String>, // 強制條件衝突 + RuleEngine 驗證出的違規
-        val warnings: List<String> // 其他非致命性問題 (目前較少使用)
+        val score: Int,
+        val violations: List<String>,
+        val warnings: List<String>
     )
 
-    // ✅ 使用 SchedulingRuleInterface
+    // Rule engine setup remains the same, using the Interface
     private val allAvailableRules: List<SchedulingRuleInterface> = listOf(
         MaxConsecutiveWorkDaysRule(),
         MinRestBetweenShiftsRule(),
         NightShiftFollowupRule()
-        // 可以根據需要加入更多規則
+        // Add other rule implementations here
     )
-    // 建立規則引擎實例 (用於最終驗證)
-    private val ruleEngine = RuleEngine(allAvailableRules)
+    private val ruleEngine = RuleEngine(allAvailableRules) // RuleEngine expects List<SchedulingRuleInterface>
 
-    // --- Entry Point ---
     /**
      * 生成排班表的主函數
-     * @param strategy 排班策略 ("general", "hospital")
-     * @param orderedUsers 醫院策略需要的排序後 User 列表
-     * @param preScheduledRotations 醫院策略需要的輪替預排班 Map<UserId, Map<Day, ShiftId>>
+     * @param rules DB來的啟用規則 (data model)
      */
     fun generateSchedule(
         orgId: String,
         groupId: String,
         month: String,
-        users: List<User>, // 所有參與排班的原始 User 列表
-        shiftTypes: List<ShiftType>, // ✅ 在此處定義的 shiftTypes
+        users: List<User>,
+        shiftTypes: List<ShiftType>,
         requests: List<Request>,
-        reservations: List<Reservation>, // dailyShifts 為 Map<String, List<String>>
-        rules: List<SchedulingRule>, // DB來的啟用規則 (data model)
+        reservations: List<Reservation>,
+        rules: List<SchedulingRuleData>, // Expect Data class from DB
         manpowerPlan: ManpowerPlan?,
-        strategy: String = "general", // 新增：排班策略
-        orderedUsers: List<User>? = null, // 新增：醫院策略參數
-        preScheduledRotations: Map<String, Map<String, String>>? = null // 新增：醫院策略參數
+        strategy: SchedulingStrategyType = SchedulingStrategyType.HOSPITAL_GREEDY,
+        orderedUsers: List<User>? = null,
+        preScheduledRotations: Map<String, Map<String, String>>? = null
     ): ScheduleGenerationResult {
         val dates = DateUtils.getDatesInMonth(month)
         val offShift = shiftTypes.find { it.shortCode == "OFF" }
 
-        // 基本檢查
+        // Basic checks remain the same
         if (offShift == null || manpowerPlan == null || manpowerPlan.dailyRequirements.isEmpty()) {
-            return ScheduleGenerationResult(
-                schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"),
-                assignments = emptyList(), score = -9999,
-                violations = listOf("錯誤：找不到 OFF 班別或未設定人力規劃。"), warnings = emptyList()
-            )
+            return ScheduleGenerationResult( violations = listOf("錯誤：找不到 OFF 班別或未設定人力規劃。"), schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, warnings = emptyList() )
         }
         if (users.isEmpty()) {
-            return ScheduleGenerationResult(
-                schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"),
-                assignments = emptyList(), score = -9999,
-                violations = listOf("錯誤：沒有參與排班的使用者。"), warnings = emptyList()
-            )
+            return ScheduleGenerationResult( violations = listOf("錯誤：沒有參與排班的使用者。"), schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, warnings = emptyList() )
         }
 
-
-        // 根據策略選擇執行流程
+        // Strategy selection remains the same
         return when (strategy) {
-            "hospital" -> {
-                // 醫院策略需要額外參數
+            SchedulingStrategyType.HOSPITAL_BACKTRACKING -> {
                 if (orderedUsers == null || preScheduledRotations == null) {
-                    ScheduleGenerationResult(
-                        schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"),
-                        assignments = emptyList(), score = -9999,
-                        violations = listOf("錯誤：醫院排班策略缺少必要參數 (orderedUsers 或 preScheduledRotations)。"), warnings = emptyList()
-                    )
+                    ScheduleGenerationResult( violations = listOf("錯誤：回溯排班策略缺少必要參數 (orderedUsers 或 preScheduledRotations)。"), schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, warnings = emptyList() )
                 } else {
-                    generateHospitalScheduleRefined( // ✅ 呼叫新的 Refined 函數
-                        orgId, groupId, month, users, shiftTypes, requests, reservations, rules,
+                    Log.d("ScheduleGenerator", "使用 HOSPITAL_BACKTRACKING 策略")
+                    generateWithBacktrackingSolver(
+                        orgId, groupId, month, users, shiftTypes, requests, reservations, rules, // Pass Data class rules
                         manpowerPlan, offShift, dates, orderedUsers, preScheduledRotations
                     )
                 }
             }
-            else -> { // "general" or any other unknown strategy
-                generateGeneralSchedule( // 通用策略保持不變
-                    orgId, groupId, month, users, shiftTypes, requests, reservations, rules,
+            SchedulingStrategyType.HOSPITAL_GREEDY -> {
+                if (orderedUsers == null || preScheduledRotations == null) {
+                    ScheduleGenerationResult( violations = listOf("錯誤：醫院排班策略缺少必要參數 (orderedUsers 或 preScheduledRotations)。"), schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, warnings = emptyList() )
+                } else {
+                    Log.d("ScheduleGenerator", "使用 HOSPITAL_GREEDY 策略")
+                    generateHospitalScheduleGreedy(
+                        orgId, groupId, month, users, shiftTypes, requests, reservations, rules, // Pass Data class rules
+                        manpowerPlan, offShift, dates, orderedUsers, preScheduledRotations
+                    )
+                }
+            }
+            SchedulingStrategyType.GENERAL -> {
+                Log.d("ScheduleGenerator", "使用 GENERAL 策略")
+                generateGeneralSchedule(
+                    orgId, groupId, month, users, shiftTypes, requests, reservations, rules, // Pass Data class rules
                     manpowerPlan, offShift, dates
                 )
             }
         }
     }
 
-    // --- Hospital Scheduling Strategy Implementation (Refined) ---
     /**
-     * ✅ 新的醫院排班策略：逐步填充 + 衝突記錄 (無回溯)
+     * 使用 BacktrackingSolver 生成班表的函數
+     * @param dbRules DB來的啟用規則 (data model)
      */
-    private fun generateHospitalScheduleRefined(
+    private fun generateWithBacktrackingSolver(
         orgId: String, groupId: String, month: String,
-        allUsers: List<User>, // 原始 User 列表
-        passedShiftTypes: List<ShiftType>, // ✅ 重新命名傳入的 shiftTypes 避免衝突
-        requests: List<Request>, reservations: List<Reservation>, // dailyShifts 為 Map<String, List<String>>
-        dbRules: List<SchedulingRule>, // DB來的啟用規則 (data model)
-        manpowerPlan: ManpowerPlan, offShift: ShiftType, dates: List<String>,
-        orderedUsers: List<User>, // 已排序的 User 列表
-        preScheduledRotations: Map<String, Map<String, String>> // Map<UserId, Map<Day, ShiftId>>
+        allUsers: List<User>, shiftTypes: List<ShiftType>,
+        requests: List<Request>, reservations: List<Reservation>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
+        manpowerPlan: ManpowerPlan,
+        offShift: ShiftType, dates: List<String>,
+        orderedUsers: List<User>, preScheduledRotations: Map<String, Map<String, String>>
     ): ScheduleGenerationResult {
 
-        val violations = mutableListOf<String>() // 儲存強制條件衝突訊息
-        // 初始化 userAssignments Map: UserId -> Day -> ShiftId
+        // --- Prepare data for Solver ---
+
+        // 1. Calculate initial quotas (remains the same)
+        val workShifts = shiftTypes.filter { it.shortCode != "OFF" }
+        val (workQuotas, offQuota) = calculateAllQuotas(manpowerPlan, orderedUsers, workShifts, offShift, dates.size)
+        // Correct initialization for initialQuotas
+        val initialQuotas: Map<String, Map<String, Int>> = workQuotas.mapValues { it.value } +
+                orderedUsers.associate { user ->
+                    user.id to mapOf(offShift.id to (offQuota[user.id] ?: 0))
+                }.mapValues { entry ->
+                    (workQuotas[entry.key] ?: emptyMap()) + entry.value // Merge work and off quotas
+                }
+
+        // 2. Build initial schedule (including rotations, leaves, prefs)
+        val initialSchedule = mutableMapOf<String, MutableMap<String, String>>()
+        allUsers.forEach { initialSchedule[it.id] = mutableMapOf() } // Initialize user rows
+        val initialViolations = mutableListOf<String>()
+
+        // Use MutableMaps for strict application functions
+        val mutableWorkQuotas = initialQuotas.mapValues { it.value.toMutableMap() }.toMutableMap()
+        val mutableOffQuota = offQuota.toMutableMap()
+
+        // 2a. Apply rotations
+        applyPreScheduledRotationsStrict(preScheduledRotations, initialSchedule, mutableWorkQuotas, initialViolations)
+
+        // 2b. Apply leaves
+        applyApprovedLeavesStrict(requests, offShift, initialSchedule, mutableOffQuota, initialViolations)
+        // Update mutableWorkQuotas with final off quotas
+        mutableWorkQuotas.forEach { (userId, quotas) ->
+            quotas[offShift.id] = mutableOffQuota[userId] ?: 0
+        }
+
+        // (Optional) 2c. Apply strict reservations if needed before solving
+        // applyReservationsStrict(reservations, initialSchedule, shiftTypes, mutableWorkQuotas, mutableOffQuota, dbRules, initialViolations)
+
+        // --- Create and run Solver ---
+        val solver = BacktrackingSolver(
+            users = orderedUsers,
+            numDays = dates.size,
+            dates = dates,
+            initialSchedule = initialSchedule.mapValues { it.value.toMap() }, // Pass immutable map
+            initialQuotas = mutableWorkQuotas.mapValues { it.value.toMap() }, // Pass immutable map reflecting applied leaves/rotations
+            shiftTypes = shiftTypes,
+            dbRules = dbRules, // Pass Data class rules to solver
+            ruleEngine = ruleEngine
+        )
+
+        val solveSuccess = solver.solve()
+
+        // --- Process Solver result ---
+        if (solveSuccess) {
+            val finalAssignmentsMap = solver.getSolution()
+            if (finalAssignmentsMap != null) {
+                return finalizeScheduleStrict(
+                    orgId, groupId, month, finalAssignmentsMap, allUsers, shiftTypes, dbRules, initialViolations // Pass Data class rules
+                )
+            } else {
+                return ScheduleGenerationResult( violations = initialViolations + "回溯求解器成功但未返回班表", schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9998, warnings = emptyList() )
+            }
+        } else {
+            return ScheduleGenerationResult( violations = initialViolations + "回溯求解器未能找到滿足所有硬性條件的班表", schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, warnings = emptyList() )
+        }
+    }
+
+    /**
+     * 醫院排班策略 - 貪婪法
+     * @param dbRules DB來的啟用規則 (data model)
+     */
+    private fun generateHospitalScheduleGreedy(
+        orgId: String, groupId: String, month: String,
+        allUsers: List<User>, passedShiftTypes: List<ShiftType>,
+        requests: List<Request>, reservations: List<Reservation>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
+        manpowerPlan: ManpowerPlan,
+        offShift: ShiftType, dates: List<String>,
+        orderedUsers: List<User>, preScheduledRotations: Map<String, Map<String, String>>
+    ): ScheduleGenerationResult {
+
+        val violations = mutableListOf<String>()
         val userAssignments = mutableMapOf<String, MutableMap<String, String>>()
         allUsers.forEach { userAssignments[it.id] = mutableMapOf() }
 
-        // 使用傳入的 passedShiftTypes
         val nShift = passedShiftTypes.find { it.name == "值班(夜)" }
         val sShift = passedShiftTypes.find { it.name == "白班" }
         val dShift = passedShiftTypes.find { it.name == "值班(日)" }
-        val workShifts = listOfNotNull(nShift, sShift, dShift) // 過濾掉 null
+        val workShifts = listOfNotNull(nShift, sShift, dShift) // Ensure only non-null shifts
 
-        // --- 排班流程 ---
-
-        // 【步驟 1：計算配額】
+        // --- Scheduling Flow (Greedy Steps) ---
         val (workQuotas, offQuota) = calculateAllQuotas(manpowerPlan, orderedUsers, workShifts, offShift, dates.size)
-        // ✅ Make remainingWorkQuotas accessible in later steps if needed outside this function scope
-        // For now, it's used within this function and passed down.
-        val remainingWorkQuotas = workQuotas.mapValues { (_, quotas) -> quotas.toMutableMap() }.toMutableMap()
+        // Correct initialization
+        val remainingWorkQuotas = workQuotas.mapValues { it.value.toMutableMap() }.toMutableMap()
         val remainingOffQuota = offQuota.toMutableMap()
 
-        // 【步驟 2：填入輪替班】
+        // Apply pre-scheduled items strictly
         applyPreScheduledRotationsStrict(preScheduledRotations, userAssignments, remainingWorkQuotas, violations)
-
-        // 【步驟 3：填入已核准休假】
         applyApprovedLeavesStrict(requests, offShift, userAssignments, remainingOffQuota, violations)
-
-        // 【步驟 4：填入偏好 (預約)】 - 選項 B: 檢查配額
-        // ✅ 傳遞正確的 shiftTypes 變數
+        // Pass Data class dbRules
         applyReservationsStrict(reservations, userAssignments, passedShiftTypes, remainingWorkQuotas, remainingOffQuota, dbRules, violations)
 
-        // 【步驟 5：填入夜班 (N)】
-        // ✅ 傳遞正確的 shiftTypes 變數
-        assignShiftTypeStrict(
-            dates, manpowerPlan, nShift, userAssignments, remainingWorkQuotas,
-            orderedUsers, // 雖然 sortByShiftCount 為 true，但此參數仍需傳遞
-            allUsers, passedShiftTypes, dbRules, violations, offShift, remainingOffQuota,
-            sortByShiftCount = true // <--- 將 N班排序方式改為按班數
-        )
-        // 【步驟 6：填入值班 (D)】
-        assignShiftTypeStrict(dates, manpowerPlan, dShift, userAssignments, remainingWorkQuotas, orderedUsers, allUsers, passedShiftTypes, dbRules, violations, offShift = null, remainingOffQuota = null, sortByShiftCount = true) // D班按次數排序
+        // Assign shifts strictly based on need, quota, and rules
+        // Pass Data class dbRules
+        assignShiftTypeStrict(dates, manpowerPlan, nShift, userAssignments, remainingWorkQuotas, orderedUsers, allUsers, passedShiftTypes, dbRules, violations, offShift, remainingOffQuota, sortByShiftCount = true)
+        assignShiftTypeStrict(dates, manpowerPlan, dShift, userAssignments, remainingWorkQuotas, orderedUsers, allUsers, passedShiftTypes, dbRules, violations, offShift = null, remainingOffQuota = null, sortByShiftCount = true)
+        assignShiftTypeStrict(dates, manpowerPlan, sShift, userAssignments, remainingWorkQuotas, orderedUsers, allUsers, passedShiftTypes, dbRules, violations, offShift = null, remainingOffQuota = null, sortByShiftCount = false)
 
-        // 【步驟 7：填入白班 (S)】
-        assignShiftTypeStrict(dates, manpowerPlan, sShift, userAssignments, remainingWorkQuotas, orderedUsers, allUsers, passedShiftTypes, dbRules, violations, offShift = null, remainingOffQuota = null) // S班按 orderedUsers 排序
+        // Fill remaining spots with OFF, checking quotas and rules
+        // Pass Data class dbRules
+        fillRemainingWithOffStrict(userAssignments, allUsers, dates, offShift, passedShiftTypes, dbRules, remainingOffQuota, remainingWorkQuotas.toMap(), violations) // Pass immutable copy of work quotas
 
-        // 【步驟 8：填入剩餘 OFF】
-        // ✅ 傳遞正確的 shiftTypes 變數 and remainingWorkQuotas
-        fillRemainingWithOffStrict(userAssignments, allUsers, dates, offShift, passedShiftTypes, dbRules, remainingOffQuota, remainingWorkQuotas, violations) // Pass shiftTypes, dbRules, and remainingWorkQuotas
-
-        // 【步驟 9 & 10：驗證與產出】
-        // ✅ 傳遞正確的 shiftTypes 變數
+        // Finalize (validate and build result)
+        // Pass Data class dbRules
         return finalizeScheduleStrict(orgId, groupId, month, userAssignments, allUsers, passedShiftTypes, dbRules, violations)
     }
 
-    // --- Refined Helper Functions ---
-
-    /**
-     * ✅ 計算所有工作班別和 OFF 班的配額
-     * @return Pair<工作班別配額 Map<UserId, Map<ShiftId, Quota>>, OFF班配額 Map<UserId, Quota>>
-     */
+    // --- calculateAllQuotas (remains the same) ---
     private fun calculateAllQuotas(
         manpowerPlan: ManpowerPlan,
         orderedUsers: List<User>,
@@ -195,7 +251,6 @@ class ScheduleGenerator {
         val numUsers = orderedUsers.size
         if (numUsers == 0) return emptyMap<String, Map<String, Int>>() to emptyMap()
 
-        // 計算工作班別配額
         workShifts.forEach { shift ->
             var totalDemand = 0
             manpowerPlan.dailyRequirements.values.forEach { dailyReq ->
@@ -213,19 +268,16 @@ class ScheduleGenerator {
             }
         }
 
-        // 計算 OFF 班配額
         orderedUsers.forEach { user ->
             val totalWorkQuota = workQuotas[user.id]?.values?.sum() ?: 0
-            offQuota[user.id] = (daysInMonth - totalWorkQuota).coerceAtLeast(0) // 確保不為負
+            offQuota[user.id] = (daysInMonth - totalWorkQuota).coerceAtLeast(0)
         }
 
-        return workQuotas to offQuota
+        // Return immutable maps
+        return workQuotas.mapValues { it.value.toMap() } to offQuota.toMap()
     }
 
-    // 修改開始
-    /**
-     * ✅ 嚴格套用輪替班，衝突時記錄 Violation (修改：配額不足時不排入)
-     */
+    // --- applyPreScheduledRotationsStrict (remains the same) ---
     private fun applyPreScheduledRotationsStrict(
         preScheduledRotations: Map<String, Map<String, String>>,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
@@ -234,42 +286,28 @@ class ScheduleGenerator {
     ) {
         preScheduledRotations.forEach { (userId, dailyShifts) ->
             dailyShifts.forEach { (day, shiftId) ->
-                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
-                // 檢查當天是否已被排班 (例如：被休假或預約佔用)
                 val existingAssignment = userAssignments[userId]?.get(day)
                 if (existingAssignment == null) {
-                    // 檢查配額是否足夠
                     val quotas = remainingWorkQuotas[userId]
                     if (quotas != null && quotas.containsKey(shiftId)) {
                         if ((quotas[shiftId] ?: 0) > 0) {
-                            // 配額充足，排入班別並扣減配額
-                            userAssignments[userId]?.set(day, shiftId)
-                            quotas[shiftId] = (quotas[shiftId] ?: 1) - 1 // 扣減配額
+                            userAssignments.getOrPut(userId) { mutableMapOf() }[day] = shiftId // Ensure user map exists
+                            quotas[shiftId] = (quotas[shiftId] ?: 1) - 1
                         } else {
-                            // 配額不足，不排入班別，僅記錄衝突
                             violations.add("【輪替配額衝突】使用者 $userId 在 $day 的輪替班 $shiftId 因配額不足而未排入。")
-                            // 注意：這裡不再強制 userAssignments[userId]?.set(day, shiftId)
                         }
-                    } else {
-                        // 非配額控管的輪替班別 (理論上較少見) 或找不到使用者配額記錄，直接排入
-                        userAssignments[userId]?.set(day, shiftId)
-                        // 可考慮在此處加入警告 Log
-                        // Log.w("ScheduleGenerator", "使用者 $userId 的輪替班 $shiftId 非配額班別或找不到配額記錄，已直接排入。")
+                    } else { // Shift not under quota control
+                        userAssignments.getOrPut(userId) { mutableMapOf() }[day] = shiftId
                     }
-                } else if (existingAssignment != shiftId) { // 如果已存在且不是同一個班別
-                    // 當天已被其他更高優先級 (如休假) 的班別佔用
+                } else if (existingAssignment != shiftId) {
                     violations.add("【輪替衝突】使用者 $userId 在 $day 的輪替班 $shiftId 與先前排定的班別 ($existingAssignment) 衝突，未排入。")
                 }
-                // 如果已存在且是同一個班別，則無需處理
-                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
             }
         }
     }
-// 修改結束
 
-    /**
-     * ✅ 嚴格套用休假，衝突時記錄 Violation
-     */
+
+    // --- applyApprovedLeavesStrict (remains the same) ---
     private fun applyApprovedLeavesStrict(
         requests: List<Request>,
         offShift: ShiftType,
@@ -283,30 +321,29 @@ class ScheduleGenerator {
                 val existingAssignment = userAssignments[request.userId]?.get(day)
 
                 if (existingAssignment == null) {
-                    // 檢查休假配額
                     if ((remainingOffQuota[request.userId] ?: 0) > 0) {
-                        userAssignments[request.userId]?.set(day, offShift.id)
-                        remainingOffQuota[request.userId] = (remainingOffQuota[request.userId] ?: 1) - 1 // 扣減配額
+                        userAssignments.getOrPut(request.userId) { mutableMapOf() }[day] = offShift.id // Ensure user map exists
+                        remainingOffQuota[request.userId] = (remainingOffQuota[request.userId] ?: 1) - 1
                     } else {
                         violations.add("【休假配額衝突】${request.userName} 於 ${request.date} 的休假配額不足，未排入。")
                     }
                 } else if (existingAssignment != offShift.id) {
-                    violations.add("【休假衝突】${request.userName} 於 ${request.date} 的休假與輪替班衝突，未排入。")
+                    violations.add("【休假衝突】${request.userName} 於 ${request.date} 的休假與輪替班($existingAssignment)衝突，未排入。")
                 }
-                // 如果已存在的是 OFF，無需處理
             }
     }
 
     /**
-     * ✅ 修改：嚴格套用預約偏好 (選項 B: 檢查配額)，處理 List<String>
+     * 嚴格套用預約偏好, 檢查配額和硬性規則
+     * @param dbRules DB來的啟用規則 (data model)
      */
     private fun applyReservationsStrict(
-        reservations: List<Reservation>, // dailyShifts is Map<String, List<String>>
+        reservations: List<Reservation>,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
-        localShiftTypes: List<ShiftType>, // 使用局部變數名
+        localShiftTypes: List<ShiftType>,
         remainingWorkQuotas: MutableMap<String, MutableMap<String, Int>>,
         remainingOffQuota: MutableMap<String, Int>,
-        dbRules: List<SchedulingRule>, // data model SchedulingRule
+        dbRules: List<SchedulingRuleData>, // Expect Data class
         violations: MutableList<String>
     ) {
         val offShiftId = localShiftTypes.find { it.shortCode == "OFF" }?.id ?: ""
@@ -314,66 +351,63 @@ class ScheduleGenerator {
 
         reservations.forEach { reservation ->
             reservation.dailyShifts.entries.sortedBy { entry -> entry.key }.forEach { (day, preferences) ->
+                // Check if the spot is already filled (by rotation or leave)
                 if (userAssignments[reservation.userId]?.get(day) == null && preferences.isNotEmpty()) {
                     var preferenceAssigned = false
                     for (shiftId in preferences) {
                         val isOffShift = shiftId == offShiftId
-                        // ✅ 修正 Line 313: 直接在 if/else 內部計算 currentQuota
                         val currentQuota = if (isOffShift) {
                             remainingOffQuota[reservation.userId] ?: 0
                         } else {
-                            val workQuotaMap = remainingWorkQuotas[reservation.userId]
-                            workQuotaMap?.get(shiftId) ?: 0
+                            remainingWorkQuotas[reservation.userId]?.get(shiftId) ?: 0
                         }
 
-                        // 檢查硬性規則 和 配額
+                        // Check quota and hard rules
                         if (currentQuota > 0 && checkAllHardRulesRealtime(reservation.userId, day, shiftId, userAssignments, localShiftTypes, dbRules)) {
-                            userAssignments[reservation.userId]?.set(day, shiftId)
-                            // 扣減配額
+                            userAssignments.getOrPut(reservation.userId) { mutableMapOf() }[day] = shiftId // Assign
+                            // Deduct quota
                             if (isOffShift) {
                                 remainingOffQuota[reservation.userId] = currentQuota - 1
                             } else {
-                                remainingWorkQuotas[reservation.userId]?.let { quotas ->
-                                    if (quotas is MutableMap) { quotas[shiftId] = currentQuota - 1 }
-                                }
+                                remainingWorkQuotas[reservation.userId]?.set(shiftId, currentQuota - 1)
                             }
                             preferenceAssigned = true
                             Log.d("ApplyReservations", "Assigned preference ${shiftTypeMap[shiftId]?.name} for ${reservation.userName} on day $day.")
-                            break // 找到符合的偏好就停止
+                            break // Stop after assigning the highest valid preference
                         } else {
                             val reason = if (currentQuota <= 0) "quota limit" else "hard rule violation"
                             Log.d("ApplyReservations", "Skipped preference ${shiftTypeMap[shiftId]?.name} for ${reservation.userName} on day $day due to $reason.")
                         }
-                    } // End preference loop for the day
+                    }
                     if (!preferenceAssigned) {
                         Log.w("ApplyReservations", "【Preference Conflict】No valid preference found for ${reservation.userName} on day $day.")
+                        // Optionally add to violations list
+                        // violations.add("【偏好衝突】使用者 ${reservation.userName} 在 $day 的所有偏好均無法滿足 (配額或規則限制)。")
                     }
-                } // End if spot is empty
-            } // End loop through days
-        } // End loop through reservations
+                }
+            }
+        }
     }
 
 
     /**
-     * ✅ 通用的嚴格班別指派函式 (取代 assignRemainingShiftsHospital)
-     * @param sortByShiftCount 是否按該班別已排次數排序 (用於 D 班)
+     * 通用的嚴格班別指派函式
+     * @param dbRules DB來的啟用規則 (data model)
      */
     private fun assignShiftTypeStrict(
         dates: List<String>, manpowerPlan: ManpowerPlan, shiftToAssign: ShiftType?,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         remainingWorkQuotas: MutableMap<String, MutableMap<String, Int>>,
-        orderedUsers: List<User>, // 僅用於 S 班排序
+        orderedUsers: List<User>,
         allUsers: List<User>,
         localShiftTypes: List<ShiftType>,
-        dbRules: List<SchedulingRule>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
         violations: MutableList<String>,
-        offShift: ShiftType?, // 用於預填 OFF
-        remainingOffQuota: MutableMap<String, Int>?, // 用於預填 OFF
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 1: 更改預設值 (雖然呼叫時會明確指定) ▼▼▼▼▼▼▼▼▼▼▼▼
-        sortByShiftCount: Boolean = false // D班 和 N班 設為 true, S班 設為 false
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+        offShift: ShiftType?,
+        remainingOffQuota: MutableMap<String, Int>?,
+        sortByShiftCount: Boolean = false
     ) {
-        if (shiftToAssign == null) return // 如果班別不存在 (例如 N,S,D 找不到)
+        if (shiftToAssign == null) return
 
         dates.forEach { date ->
             val day = date.split("-").last()
@@ -382,62 +416,57 @@ class ScheduleGenerator {
             var needed = requiredCount - assignedCount
 
             if (needed > 0) {
-                // 1. 找出當天未排班的人
+                // Find users not assigned today
                 val availableUserIds = allUsers.map { it.id }
                     .filter { userId -> userAssignments[userId]?.get(day) == null }
 
-                // 2. 篩選同時符合【硬性規則】和【配額】的候選人
+                // Filter candidates by quota and hard rules
                 val validCandidates = availableUserIds.filter { userId ->
                     val hasQuota = (remainingWorkQuotas[userId]?.get(shiftToAssign.id) ?: 0) > 0
                     val passesHardRules = checkAllHardRulesRealtime(userId, day, shiftToAssign.id, userAssignments, localShiftTypes, dbRules)
                     hasQuota && passesHardRules
                 }
 
-                // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改點 2: 核心排序邏輯 ▼▼▼▼▼▼▼▼▼▼▼▼
-                // 3. 排序候選人
+                // Sort candidates
                 val sortedCandidates = if (sortByShiftCount) {
-                    // 按該班別已排次數升冪排序 (用於 N班 和 D班，以求平均)
                     validCandidates.sortedBy { userId -> countAssignedShifts(userId, shiftToAssign.id, userAssignments) }
                 } else {
-                    // 按管理員設定的順序排序 (用於 S班 或其他非輪替班)
                     validCandidates.sortedBy { userId -> orderedUsers.indexOfFirst { it.id == userId } }
                 }
-                // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
-                // 4. 指派人選
+                // Assign users
                 val usersToAssign = sortedCandidates.take(needed)
                 usersToAssign.forEach { userId ->
-                    userAssignments[userId]?.set(day, shiftToAssign.id)
+                    userAssignments.getOrPut(userId) { mutableMapOf() }[day] = shiftToAssign.id
                     remainingWorkQuotas[userId]?.let { quotas ->
-                        if (quotas is MutableMap) { quotas[shiftToAssign.id] = (quotas[shiftToAssign.id] ?: 1) - 1 } // 扣減配額
+                        quotas[shiftToAssign.id] = (quotas[shiftToAssign.id] ?: 1) - 1
                     }
                     needed--
 
-                    // 預填 OFF (僅 N 班需要)
+                    // Pre-fill OFF for N shift if applicable
                     if (offShift != null && remainingOffQuota != null && shiftToAssign.name == "值班(夜)") {
-                        // ... (預填 OFF 邏輯保持不變) ...
-                        val nightFollowupRule = dbRules.find { it.ruleName == "夜班後續班別限制" }
                         val nextDayInt = day.toIntOrNull()?.plus(1) ?: 0
-                        if (nextDayInt > 0 && nextDayInt <= dates.size) { // Ensure next day is within the month
+                        if (nextDayInt > 0 && nextDayInt <= dates.size) {
                             val nextDayKey = String.format("%02d", nextDayInt)
+                            // Check if next day is already assigned (could be rotation, leave, or another N)
                             val nextDayAssignment = userAssignments[userId]?.get(nextDayKey)
-                            val nextShiftIsAlsoNOrAssigned = nextDayAssignment != null
-
-                            if (!nextShiftIsAlsoNOrAssigned && (remainingOffQuota[userId] ?: 0) > 0) {
-                                if (checkAllHardRulesRealtime(userId, nextDayKey, offShift.id, userAssignments, localShiftTypes, dbRules)) {
-                                    userAssignments[userId]?.set(nextDayKey, offShift.id)
-                                    remainingOffQuota[userId] = (remainingOffQuota[userId] ?: 1) - 1
+                            if (nextDayAssignment == null) { // Only prefill if empty
+                                if ((remainingOffQuota[userId] ?: 0) > 0) {
+                                    if (checkAllHardRulesRealtime(userId, nextDayKey, offShift.id, userAssignments, localShiftTypes, dbRules)) {
+                                        userAssignments[userId]?.set(nextDayKey, offShift.id)
+                                        remainingOffQuota[userId] = (remainingOffQuota[userId] ?: 1) - 1
+                                    } else {
+                                        violations.add("【規則衝突】無法為 ${allUsers.find { it.id == userId }?.name} 在 $nextDayKey 預填夜班後的 OFF (違反規則)。")
+                                    }
                                 } else {
-                                    violations.add("【規則衝突】無法為 ${allUsers.find{it.id==userId}?.name} 在 $nextDayKey 預填夜班後的 OFF (違反規則)。")
+                                    violations.add("【配額衝突】無法為 ${allUsers.find { it.id == userId }?.name} 在 $nextDayKey 預填夜班後的 OFF (配額不足)。")
                                 }
-                            } else if (!nextShiftIsAlsoNOrAssigned) {
-                                violations.add("【配額衝突】無法為 ${allUsers.find{it.id==userId}?.name} 在 $nextDayKey 預填夜班後的 OFF (配額不足)。")
                             }
                         }
                     }
                 } // end forEach usersToAssign
 
-                // 5. 如果人數仍不足
+                // Check if still needed
                 if (needed > 0) {
                     violations.add("【人力/規則/配額衝突】日期 $date 的 ${shiftToAssign.name} 缺少 $needed 人力 (找不到符合所有強制條件的人員)。")
                 }
@@ -447,56 +476,50 @@ class ScheduleGenerator {
 
 
     /**
-     * ✅ 修改：嚴格填入剩餘 OFF，修正 remainingWorkQuotas 訪問
+     * 嚴格填入剩餘 OFF, 檢查配額和硬性規則
+     * @param dbRules DB來的啟用規則 (data model)
      */
     private fun fillRemainingWithOffStrict(
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         allUsers: List<User>, dates: List<String>, offShift: ShiftType,
-        localShiftTypes: List<ShiftType>, // ✅ Add shiftTypes parameter
-        dbRules: List<SchedulingRule>,      // ✅ Add dbRules parameter
+        localShiftTypes: List<ShiftType>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
         remainingOffQuota: MutableMap<String, Int>,
-        // ✅ Add remainingWorkQuotas as parameter
-        remainingWorkQuotasParam: Map<String, Map<String, Int>>, // Use a different name to avoid shadowing if necessary
+        remainingWorkQuotasParam: Map<String, Map<String, Int>>, // Immutable map
         violations: MutableList<String>
     ) {
         allUsers.forEach { user ->
             dates.forEach { date ->
                 val day = date.split("-").last()
-                if (userAssignments[user.id]?.get(day) == null) {
+                if (userAssignments[user.id]?.get(day) == null) { // If spot is empty
                     if ((remainingOffQuota[user.id] ?: 0) > 0) {
-                        // 檢查填入 OFF 是否違反硬性規則 (例如連續休假過長)
-                        // ✅ Pass shiftTypes and dbRules to checkAllHardRulesRealtime
+                        // Check hard rules before filling OFF
                         if (checkAllHardRulesRealtime(user.id, day, offShift.id, userAssignments, localShiftTypes, dbRules)) {
-                            userAssignments[user.id]?.set(day, offShift.id)
+                            userAssignments.getOrPut(user.id) { mutableMapOf() }[day] = offShift.id
                             remainingOffQuota[user.id] = (remainingOffQuota[user.id] ?: 1) - 1
                         } else {
-                            violations.add("【OFF 規則衝突】無法為 ${user.name} 在 $date 填入 OFF (違反硬性規則)。")
-                            // Decide: Leave blank or force OFF despite rule? Current logic leaves blank.
+                            violations.add("【OFF 規則衝突】無法為 ${user.name} 在 $date 填入 OFF (違反硬性規則)。班表可能有空格。")
+                            // Spot remains blank
                         }
                     } else {
-                        // OFF 配額不足，這通常表示配額計算或之前的扣減有問題
                         violations.add("【OFF 配額嚴重衝突】${user.name} 在 $date 填入 OFF 時配額不足！班表可能有空格。")
-                        // Leave the spot blank as quota is a hard constraint
+                        // Spot remains blank
                     }
                 }
             }
         }
-        // 最後檢查是否有人的 OFF 配額沒用完 (表示工作量可能超出預期)
+
+        // Final quota checks (remain the same)
         remainingOffQuota.forEach { (userId, quota) ->
             if (quota > 0) {
                 Log.w("ScheduleGenerator", "使用者 ${allUsers.find{it.id==userId}?.name} 的 OFF 配額剩餘 $quota")
-                // 可以考慮加入 Warning
             } else if (quota < 0) {
                 violations.add("【OFF 配額計算錯誤】${allUsers.find{it.id==userId}?.name} 的 OFF 配額變為負數 $quota！")
             }
         }
-        // 檢查工作配額是否有負數
-        // ✅ 修正 Line 404: Use the passed parameter remainingWorkQuotasParam
-        // ✅ 修正 Line 404 & 406: Explicitly define lambda parameters
         remainingWorkQuotasParam.forEach { (userId, quotas) ->
             quotas.forEach { (shiftId, quota) ->
                 if (quota < 0) {
-                    // ✅ 修正 Line 406: Use localShiftTypes
                     violations.add("【工作配額計算錯誤】${allUsers.find{it.id==userId}?.name} 的 ${localShiftTypes.find{it.id==shiftId}?.name} 配額變為負數 $quota！")
                 }
             }
@@ -505,124 +528,109 @@ class ScheduleGenerator {
 
 
     /**
-     * ✅【實現基礎版本】即時檢查所有硬性規則
-     * 這個函式模擬將 shiftIdToAssign 分配給 userId 在 day 這天後，
-     * 是否會違反任何已啟用的硬性規則。
+     * 即時檢查所有硬性規則
+     * @param dbRules DB來的啟用規則 (data model)
      */
     private fun checkAllHardRulesRealtime(
         userId: String, day: String, shiftIdToAssign: String,
-        currentAssignments: Map<String, Map<String, String>>,
-        localShiftTypes: List<ShiftType>, // ✅ 使用局部變數名
-        dbRules: List<SchedulingRule> // data model SchedulingRule
+        currentAssignments: Map<String, Map<String, String>>, // Should be immutable Map
+        localShiftTypes: List<ShiftType>,
+        dbRules: List<SchedulingRuleData> // Expect Data class
     ): Boolean {
-        // 模擬加入新班別後的班表
-        val simulatedAssignments = currentAssignments[userId]?.toMutableMap() ?: mutableMapOf()
-        simulatedAssignments[day] = shiftIdToAssign
+        // Create a temporary map reflecting the potential assignment
+        val simulatedUserAssignments = currentAssignments[userId]?.plus(day to shiftIdToAssign) ?: mapOf(day to shiftIdToAssign)
 
-        // 建立 RuleContext 需要的 User 物件 (只需 ID)
-        val user = User(id = userId)
-        // ✅ 傳遞正確的 shiftTypes
-        val context = RuleContext(user, simulatedAssignments, localShiftTypes)
+        val user = User(id = userId) // Rule context only needs user ID usually
+        val context = RuleContext(user, simulatedUserAssignments, localShiftTypes)
 
-        // 遍歷所有啟用的【硬性】規則
-        for (dbRule in dbRules.filter { it.ruleType == "hard" && it.isEnabled }) {
-            // 找到對應的規則實作
-            // ✅ 使用 SchedulingRuleInterface
-            val ruleImpl: SchedulingRuleInterface? = allAvailableRules.find { it.name == dbRule.ruleName }
+        // Iterate through enabled HARD rules (Data class)
+        for (dbRuleData in dbRules.filter { it.ruleType == "hard" && it.isEnabled }) {
+            // Find the corresponding implementation (Interface)
+            val ruleImpl: SchedulingRuleInterface? = allAvailableRules.find { it.name == dbRuleData.ruleName }
             if (ruleImpl != null) {
-                // 執行評估
-                val violation = ruleImpl.evaluate(context, dbRule.parameters)
+                // Evaluate using the implementation
+                val violation = ruleImpl.evaluate(context, dbRuleData.parameters)
                 if (violation != null) {
                     // Log.d("checkHardRules", "Violation for $userId on $day with $shiftIdToAssign: ${violation.message}")
-                    return false // 只要有一個硬性規則違反，就返回 false
+                    return false // Violation found
                 }
             } else {
-                Log.w("checkHardRules", "找不到規則 ${dbRule.ruleName} 的實作")
+                Log.w("checkHardRules", "找不到規則 ${dbRuleData.ruleName} 的實作")
             }
         }
-
-        // 如果所有硬性規則檢查都通過
-        return true
+        return true // All hard rules passed
     }
 
-
     /**
-     * ✅ 嚴格最終化，合併 Violations
+     * 嚴格最終化，合併 Violations
+     * @param dbRules DB來的啟用規則 (data model)
      */
     private fun finalizeScheduleStrict(
         orgId: String, groupId: String, month: String,
-        finalUserAssignments: Map<String, Map<String, String>>,
+        finalUserAssignments: Map<String, Map<String, String>>, // Should be immutable
         users: List<User>,
-        localShiftTypes: List<ShiftType>, // ✅ 使用局部變數名
-        dbRules: List<SchedulingRule>, // data model SchedulingRule
-        violationsFromProcess: List<String> // 接收填充過程中的衝突
+        localShiftTypes: List<ShiftType>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
+        violationsFromProcess: List<String>
     ): ScheduleGenerationResult {
-        // --- 事後評分與驗證 ---
-        // ✅ 傳遞正確的 shiftTypes
+        // Post-validation and scoring (uses RuleEngine with Interface rules)
         val (validationViolations, finalScore) = validateAllUsers(finalUserAssignments, users, localShiftTypes, dbRules)
-        // 合併處理過程中的衝突和最終驗證的違規 (去重)
+        // Combine violations from process and final validation
         val allViolationMessages = (violationsFromProcess + validationViolations.map { it.message }).distinct()
 
-        // --- 建立最終結果 ---
-        // warnings 列表可以保留用於記錄非強制性的問題，如果有的話
-        // ✅ 傳遞正確的 shiftTypes (雖然 buildResult 內部目前沒用到)
+        // Build final result
         return buildResult(orgId, groupId, month, finalUserAssignments, users, finalScore, allViolationMessages, emptyList())
     }
 
-
-    // --- Helper for Hospital & General: Count assigned shifts ---
+    /**
+     * Counts assigned shifts for a user (remains the same)
+     */
     private fun countAssignedShifts(userId: String, shiftId: String, userAssignments: Map<String, Map<String, String>>): Int {
         return userAssignments[userId]?.values?.count { it == shiftId } ?: 0
     }
 
-    // --- General Scheduling Strategy Implementation (舊版 - 需要相應修正) ---
+    /**
+     * 通用排班策略實現 (舊版邏輯)
+     * @param dbRules DB來的啟用規則 (data model)
+     */
     private fun generateGeneralSchedule(
         orgId: String, groupId: String, month: String,
         users: List<User>,
-        passedShiftTypes: List<ShiftType>, // ✅ 使用新名稱
-        requests: List<Request>, reservations: List<Reservation>, dbRules: List<SchedulingRule>,
+        passedShiftTypes: List<ShiftType>,
+        requests: List<Request>, reservations: List<Reservation>,
+        dbRules: List<SchedulingRuleData>, // Expect Data class
         manpowerPlan: ManpowerPlan, offShift: ShiftType, dates: List<String>
     ): ScheduleGenerationResult {
-        // --- 沿用舊版的邏輯 ---
-        // ✅ 在此處初始化時使用 passedShiftTypes
         val nShift = passedShiftTypes.find { it.name == "值班(夜)" }
         val dShift = passedShiftTypes.find { it.name == "值班(日)" }
         val sShift = passedShiftTypes.find { it.name == "白班" }
 
-        // 檢查關鍵班別是否存在
         if (nShift == null || dShift == null || sShift == null) {
-            return ScheduleGenerationResult(
-                schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"),
-                assignments = emptyList(), score = -9999,
-                violations = listOf("錯誤：找不到關鍵班別(N,D,S)。"), warnings = emptyList()
-            )
+            return ScheduleGenerationResult( schedule = Schedule(orgId = orgId, groupId = groupId, month = month, status = "error"), assignments = emptyList(), score = -9999, violations = listOf("錯誤：找不到關鍵班別(N,D,S)。"), warnings = emptyList() )
         }
 
-        // 初始化 assignments
         val userAssignments = mutableMapOf<String, MutableMap<String, String>>()
         users.forEach { userAssignments[it.id] = mutableMapOf() }
 
-        // 1. 最高優先級：排入已核准的休假
-        applyApprovedLeaves(requests, offShift, userAssignments) // 通用策略不需要 warnings
+        // 1. Apply leaves (old version)
+        applyApprovedLeaves(requests, offShift, userAssignments)
 
-        // 2. 次高優先級：排入成員預約的班表 (通用策略使用舊版 applyReservations)
-        applyReservations(reservations, userAssignments) // 需要更新以處理 List<String>
+        // 2. Apply reservations (old version)
+        applyReservations(reservations, userAssignments) // Needs update for List<String>
 
-        // 3. 第三優先級：排 N 班 (只管今天)
+        // 3. Assign N shifts (simple logic)
         dates.forEach { date ->
             val day = date.split("-").last()
             val requiredCount = manpowerPlan.dailyRequirements[day]?.requirements?.get(nShift.id) ?: 0
             if (requiredCount > 0) {
-                // 找出今天尚未被排班的員工，隨機選取
                 val availableUsers = users.filter { userAssignments[it.id]?.get(day) == null }.shuffled()
                 val usersToAssign = availableUsers.take(requiredCount)
-                usersToAssign.forEach { user -> userAssignments[user.id]?.set(day, nShift.id) }
+                usersToAssign.forEach { user -> userAssignments.getOrPut(user.id) { mutableMapOf() }[day] = nShift.id }
             }
         }
 
-        // 4. 第四 & 第五優先級：排 D 班和 S 班 (回頭看昨天)
-        val shiftsToProcess = listOf(dShift, sShift) // D 優先於 S
-        shiftsToProcess.forEach { shift ->
+        // 4 & 5. Assign D and S shifts (simple logic, checking yesterday N)
+        listOf(dShift, sShift).forEach { shift ->
             dates.forEach { date ->
                 val day = date.split("-").last()
                 val requiredCount = manpowerPlan.dailyRequirements[day]?.requirements?.get(shift.id) ?: 0
@@ -630,44 +638,38 @@ class ScheduleGenerator {
                 var needed = requiredCount - alreadyAssigned
 
                 if (needed > 0) {
-                    // 找出當天空閒，且昨天不是 N 班的員工，隨機選取
                     val availableUsers = users.filter { user ->
                         val isAvailableToday = userAssignments[user.id]?.get(day) == null
                         if (!isAvailableToday) return@filter false
-
                         val yesterdayInt = day.toIntOrNull()?.minus(1) ?: 0
-                        if (yesterdayInt <= 0) return@filter true // 第一天
-
+                        if (yesterdayInt <= 0) return@filter true
                         val yesterdayKey = String.format("%02d", yesterdayInt)
-                        val yesterdayShiftId = userAssignments[user.id]?.get(yesterdayKey)
-
-                        yesterdayShiftId != nShift.id // 關鍵：昨天不能是 N 班
+                        userAssignments[user.id]?.get(yesterdayKey) != nShift.id
                     }.shuffled()
 
                     val usersToAssign = availableUsers.take(needed)
-                    usersToAssign.forEach { user -> userAssignments[user.id]?.set(day, shift.id) }
+                    usersToAssign.forEach { user -> userAssignments.getOrPut(user.id) { mutableMapOf() }[day] = shift.id }
                 }
             }
         }
 
-        // 6. 最低優先級：將所有剩餘空格填為 OFF
-        fillRemainingWithOff(userAssignments, users, dates, offShift) // 通用策略用舊版
+        // 6. Fill remaining with OFF (old version)
+        fillRemainingWithOff(userAssignments, users, dates, offShift)
 
-        // 7 & 8. 事後評分 & 建立最終結果
-        // 通用策略沒有預先記錄的 violations， warnings 也為空
-        // ✅ 傳遞正確的 shiftTypes
-        return finalizeScheduleStrict(orgId, groupId, month, userAssignments, users, passedShiftTypes, dbRules, emptyList())
+        // 7 & 8. Finalize (using strict version now)
+        return finalizeScheduleStrict(orgId, groupId, month, userAssignments.mapValues { it.value.toMap() }, users, passedShiftTypes, dbRules, emptyList()) // Pass Data class rules
     }
 
 
-    // --- Common Helper Functions (Validate, BuildResult) ---
-
-    // Validate using RuleEngine
+    /**
+     * 驗證所有使用者班表並計算分數
+     * @param enabledDbRules DB來的啟用規則 (data model)
+     */
     private fun validateAllUsers(
-        assignments: Map<String, Map<String, String>>,
+        assignments: Map<String, Map<String, String>>, // Should be immutable
         users: List<User>,
-        localShiftTypes: List<ShiftType>, // ✅ 使用局部變數名
-        enabledDbRules: List<SchedulingRule> // data model SchedulingRule
+        localShiftTypes: List<ShiftType>,
+        enabledDbRules: List<SchedulingRuleData> // Expect Data class
     ): Pair<List<RuleViolation>, Int> {
         val allViolations = mutableListOf<RuleViolation>()
         var totalScore = 0
@@ -675,22 +677,16 @@ class ScheduleGenerator {
         users.forEach { user ->
             val userAssignmentMap = assignments[user.id] ?: emptyMap()
             if (userAssignmentMap.isNotEmpty()) {
-                // ✅ 傳遞正確的 shiftTypes
-                val context = RuleContext(user, userAssignmentMap, localShiftTypes)
-                enabledDbRules.forEach { dbRule ->
-                    // 找到對應的規則實作
-                    // ✅ 使用 SchedulingRuleInterface
-                    val ruleImpl: SchedulingRuleInterface? = allAvailableRules.find { it.name == dbRule.ruleName }
-                    if (ruleImpl != null) {
-                        // 執行驗證
-                        val violation = ruleImpl.evaluate(context, dbRule.parameters)
-                        violation?.let {
-                            allViolations.add(it)
-                            // 只累加軟性規則分數
-                            if (dbRule.ruleType == "soft") {
-                                totalScore += dbRule.penaltyScore
-                            }
-                        }
+                // Create Assignment object for RuleEngine
+                val assignmentObj = Assignment(userId = user.id, dailyShifts = userAssignmentMap)
+                // RuleEngine expects Data class rules list
+                val violations = ruleEngine.validate(user, assignmentObj, localShiftTypes, enabledDbRules)
+                allViolations.addAll(violations)
+                // Calculate score based on soft rule violations from Data class rules
+                violations.forEach { violation ->
+                    val ruleData = enabledDbRules.find { it.ruleName == violation.ruleName }
+                    if (ruleData?.ruleType == "soft") {
+                        totalScore += ruleData.penaltyScore
                     }
                 }
             }
@@ -698,10 +694,12 @@ class ScheduleGenerator {
         return Pair(allViolations, totalScore)
     }
 
-    // Build the final result object
+    /**
+     * 建立最終 ScheduleGenerationResult (remains the same)
+     */
     private fun buildResult(
         orgId: String, groupId: String, month: String,
-        assignments: Map<String, Map<String, String>>, // Map<UserId, Map<Day, ShiftId>>
+        assignments: Map<String, Map<String, String>>, // Should be immutable
         users: List<User>,
         finalScore: Int, violationMessages: List<String>, warnings: List<String>
     ): ScheduleGenerationResult {
@@ -709,11 +707,11 @@ class ScheduleGenerator {
         val finalAssignmentObjects = users.mapNotNull { user ->
             assignments[user.id]?.let { dailyShifts ->
                 Assignment(
-                    id = UUID.randomUUID().toString(),
+                    id = UUID.randomUUID().toString(), // Generate new assignment ID
                     scheduleId = scheduleId,
                     userId = user.id,
                     userName = user.name,
-                    dailyShifts = dailyShifts // assignment 存儲最終的單一 shiftId
+                    dailyShifts = dailyShifts
                 )
             }
         }
@@ -721,12 +719,12 @@ class ScheduleGenerator {
             id = scheduleId,
             orgId = orgId, groupId = groupId, month = month, status = "draft",
             generatedAt = Date(), totalScore = finalScore, violatedRules = violationMessages,
-            generationMethod = "smart"
+            generationMethod = "smart" // Or determine based on strategy
         )
         return ScheduleGenerationResult(finalSchedule, finalAssignmentObjects, finalScore, violationMessages, warnings)
     }
 
-    // Helper for Hospital & General: Fill remaining spots with OFF (舊版，通用策略使用)
+    // --- Old Helper Functions (used by General Strategy) ---
     private fun fillRemainingWithOff(
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         allUsers: List<User>, dates: List<String>, offShift: ShiftType
@@ -735,28 +733,26 @@ class ScheduleGenerator {
             dates.forEach { date ->
                 val day = date.split("-").last()
                 if (userAssignments[user.id]?.get(day) == null) {
-                    userAssignments[user.id]?.set(day, offShift.id)
+                    userAssignments.getOrPut(user.id) { mutableMapOf() }[day] = offShift.id
                 }
             }
         }
     }
-    // Helper for Hospital & General: Apply reservations (舊版，通用策略使用)
-    // ✅ 修改 applyReservations 以處理 List<String>
-    private fun applyReservations(
-        reservations: List<Reservation>, // dailyShifts is Map<String, List<String>>
+
+    private fun applyReservations( // Needs update for List<String> if used
+        reservations: List<Reservation>,
         userAssignments: MutableMap<String, MutableMap<String, String>>
     ) {
         reservations.forEach { reservation ->
-            // ✅ 明確指定 forEach lambda 參數類型
             reservation.dailyShifts.forEach { (day, preferences) ->
-                val firstPreference = preferences.firstOrNull() // 取第一個偏好
+                val firstPreference = preferences.firstOrNull()
                 if (firstPreference != null && userAssignments[reservation.userId]?.get(day) == null) {
-                    userAssignments[reservation.userId]?.set(day, firstPreference)
+                    userAssignments.getOrPut(reservation.userId) { mutableMapOf() }[day] = firstPreference
                 }
             }
         }
     }
-    // Helper for Hospital & General: Apply approved leaves (舊版，通用策略使用)
+
     private fun applyApprovedLeaves(
         requests: List<Request>,
         offShift: ShiftType,
@@ -765,11 +761,9 @@ class ScheduleGenerator {
         requests.filter { it.status == "approved" && it.type == "leave" }
             .forEach { request ->
                 val day = request.date.split("-").last()
-                // 直接覆蓋
-                userAssignments[request.userId]?.set(day, offShift.id)
+                userAssignments.getOrPut(request.userId) { mutableMapOf() }[day] = offShift.id // Direct assignment/overwrite
             }
     }
-
-
 }
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+

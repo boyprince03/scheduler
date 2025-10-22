@@ -2,7 +2,7 @@
 // scheduler/presentation/schedule/ScheduleScreen.kt
 package stevedaydream.scheduler.presentation.schedule
 
-import android.R.attr.text
+// ... (其他 imports 保持不變) ...
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -26,9 +26,13 @@ import stevedaydream.scheduler.util.showToast
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.foundation.lazy.LazyColumn // ✅ 1. 匯入 LazyColumn
-import androidx.compose.foundation.lazy.items // ✅ 2. 匯入 items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
+// ✅ 1. 移除舊的 SchedulingStrategy Enum 定義
+// enum class SchedulingStrategy(val displayName: String) { ... }
+// ✅ 2. 引入 ScheduleGenerator 中的 SchedulingStrategyType
+import stevedaydream.scheduler.domain.scheduling.SchedulingStrategyType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,9 +53,9 @@ fun ScheduleScreen(
     val isGenerating by viewModel.isGenerating.collectAsState()
     val schedules by viewModel.schedules.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
+    // ✅ 3. selectedStrategy 現在直接使用 ViewModel 中的 SchedulingStrategyType
     val selectedStrategy by viewModel.selectedStrategy.collectAsState()
     val isCalculatingRotation by viewModel.isCalculatingRotation.collectAsState()
-    // --- ✅ 3. 取得預覽相關狀態 ---
     val isPreviewGenerating by viewModel.isPreviewGenerating.collectAsState()
     val previewGeneratedSchedule by viewModel.previewGeneratedSchedule.collectAsState()
 
@@ -60,10 +64,10 @@ fun ScheduleScreen(
     var scheduleToDelete by remember { mutableStateOf<Schedule?>(null) }
     val context = LocalContext.current
 
-    // --- LaunchedEffects (增加預覽錯誤監聽) ---
+    // --- LaunchedEffects (保持不變) ---
     LaunchedEffect(Unit) {
         viewModel.generateSuccess.collect {
-            context.showToast("智慧排班已生成並儲存") // 稍微修改提示
+            context.showToast("智慧排班已生成並儲存")
         }
     }
     LaunchedEffect(Unit) {
@@ -75,13 +79,11 @@ fun ScheduleScreen(
             }
         }
     }
-    // --- ✅ 4. 監聽預覽錯誤 ---
     LaunchedEffect(Unit) {
         viewModel.previewError.collect { errorMessage ->
             context.showToast(errorMessage)
         }
     }
-
 
     Scaffold(
         topBar = {
@@ -120,11 +122,11 @@ fun ScheduleScreen(
                     onClaimClick = { viewModel.claimScheduler() }
                 )
 
+                // ... (showJoinButton 邏輯不變) ...
                 val showJoinButton = isScheduler &&
                         currentUser != null &&
                         (currentUser?.role == "org_admin" || currentUser?.role == "superuser") &&
                         !currentGroup.memberIds.contains(currentUser!!.id)
-
                 if (showJoinButton) {
                     OutlinedButton(
                         onClick = { viewModel.addSchedulerToGroup() },
@@ -135,6 +137,7 @@ fun ScheduleScreen(
                         Text("加入此群組以參與排班")
                     }
                 }
+
 
                 if (currentGroup.reservationStatus == "active" || currentGroup.reservationStatus == "closed") {
                     ReservationStatusCard(
@@ -152,20 +155,22 @@ fun ScheduleScreen(
                 if (isScheduler && currentGroup.reservationStatus != "active") {
                     SchedulerFunctionCard(
                         isGenerating = isGenerating,
-                        isPreviewGenerating = isPreviewGenerating, // ✅ 5. 傳入預覽狀態
+                        isPreviewGenerating = isPreviewGenerating,
                         selectedMonth = selectedMonth,
+                        // ✅ 4. 傳遞 SchedulingStrategyType
                         selectedStrategy = selectedStrategy,
-                        onStrategyChange = { viewModel.selectStrategy(it) },
+                        onStrategyChange = { viewModel.selectStrategy(it) }, // ViewModel 已更新
                         onShowMonthPicker = { showMonthPicker = true },
                         onNavigateToShiftTypeSettings = { onNavigateToShiftTypeSettings(viewModel.currentOrgId, viewModel.currentGroupId) },
                         onNavigateToRules = { onNavigateToRules(viewModel.currentOrgId, viewModel.currentGroupId) },
                         onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                         onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                         onGenerate = { viewModel.generateSmartSchedule(selectedMonth) },
-                        onGeneratePreview = { viewModel.generatePreviewSchedule(selectedMonth) } // ✅ 6. 傳入預覽回呼
+                        onGeneratePreview = { viewModel.generatePreviewSchedule(selectedMonth) }
                     )
                 }
 
+                // ... (啟動預約按鈕邏輯不變) ...
                 if (isScheduler && currentGroup.reservationStatus == "inactive") {
                     Button(
                         onClick = { viewModel.toggleReservation(selectedMonth, "inactive") },
@@ -173,11 +178,7 @@ fun ScheduleScreen(
                         enabled = !isCalculatingRotation
                     ) {
                         if (isCalculatingRotation) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("計算輪替中...")
                         } else {
@@ -187,7 +188,7 @@ fun ScheduleScreen(
                         }
                     }
                 }
-            }
+            } // end group?.let
 
             ScheduleListSection(
                 schedules = schedules,
@@ -198,10 +199,10 @@ fun ScheduleScreen(
                     scheduleToDelete = schedule
                 }
             )
-        }
-    }
+        } // end Column
+    } // end Scaffold
 
-    // --- ✅ 7. 顯示預覽結果 Dialog ---
+    // --- ✅ 7. Preview Dialog (保持不變) ---
     if (previewGeneratedSchedule != null) {
         PreviewScheduleDialog(
             result = previewGeneratedSchedule!!,
@@ -210,7 +211,7 @@ fun ScheduleScreen(
         )
     }
 
-
+    // --- Other Dialogs (MonthPicker, Delete Confirmation - 保持不變) ---
     if (showMonthPicker) {
         MonthPickerDialog(
             currentMonth = selectedMonth,
@@ -221,7 +222,6 @@ fun ScheduleScreen(
             }
         )
     }
-
     scheduleToDelete?.let { schedule ->
         stevedaydream.scheduler.presentation.common.ConfirmDialog(
             title = "確認刪除",
@@ -236,16 +236,13 @@ fun ScheduleScreen(
             }
         )
     }
-}
+} // end ScheduleScreen Composable
 
-
+// ... (ScheduleListSection, ScheduleCard, MonthPickerDialog, SchedulerStatusCard, ReservationStatusCard 保持不變) ...
 @Composable
-fun ScheduleListSection(
-    schedules: List<Schedule>,
-    onScheduleClick: (Schedule) -> Unit,
-    onDeleteClick: (Schedule) -> Unit
-) {
-    // ... (保持不變) ...
+fun ScheduleListSection(  schedules: List<Schedule>,
+                          onScheduleClick: (Schedule) -> Unit,
+                          onDeleteClick: (Schedule) -> Unit ) { /* ... 內容不變 ... */
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -312,15 +309,12 @@ fun ScheduleListSection(
         }
     }
 }
-
-// 排班表卡片組件
 @Composable
 fun ScheduleCard(
     schedule: Schedule,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit
-) {
-    // ... (保持不變) ...
+) { /* ... 內容不變 ... */
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -351,7 +345,6 @@ fun ScheduleCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 狀態標籤
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = when (schedule.status) {
@@ -375,21 +368,14 @@ fun ScheduleCard(
                             }
                         )
                     }
-
-                    // 分數
                     if (schedule.totalScore != 0) {
                         Text(
                             text = "分數: ${schedule.totalScore}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (schedule.totalScore >= 0)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.error
+                            color = if (schedule.totalScore >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
                 }
-
-                // 違反規則
                 if (schedule.violatedRules.isNotEmpty()) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -408,15 +394,12 @@ fun ScheduleCard(
                         )
                     }
                 }
-
-                // 生成時間
                 Text(
                     text = "生成於 ${stevedaydream.scheduler.util.DateUtils.timestampToDateString(schedule.generatedAt.time)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "查看詳情",
@@ -426,18 +409,16 @@ fun ScheduleCard(
         Spacer(Modifier.height(8.dp))
         Divider()
         Spacer(Modifier.height(8.dp))
-
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), // 增加 padding
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "ID: ${schedule.id.take(8).uppercase()} · ${if (schedule.generationMethod == "manual") "手動" else "智慧"}", // 顯示生成方式
+                text = "ID: ${schedule.id.take(8).uppercase()} · ${if (schedule.generationMethod == "manual") "手動" else "智慧"}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
             if (schedule.status == "draft") {
                 IconButton(onClick = onDeleteClick) {
                     Icon(
@@ -450,16 +431,12 @@ fun ScheduleCard(
         }
     }
 }
-
-
-// 月份選擇對話框
 @Composable
 fun MonthPickerDialog(
     currentMonth: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
-) {
-    // ... (保持不變) ...
+) { /* ... 內容不變 ... */
     var selectedMonth by remember { mutableStateOf(currentMonth) }
 
     AlertDialog(
@@ -478,10 +455,7 @@ fun MonthPickerDialog(
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (month == selectedMonth)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                Color.Transparent
+                            containerColor = if (month == selectedMonth) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                         )
                     ) {
                         Text(stevedaydream.scheduler.util.DateUtils.getDisplayMonth(month))
@@ -489,19 +463,10 @@ fun MonthPickerDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(selectedMonth) }) {
-                Text("確認")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
+        confirmButton = { TextButton(onClick = { onConfirm(selectedMonth) }) { Text("確認") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }
-
 @Composable
 fun SchedulerStatusCard(
     group: stevedaydream.scheduler.data.model.Group,
@@ -509,28 +474,21 @@ fun SchedulerStatusCard(
     isScheduler: Boolean,
     onClaimClick: () -> Unit
 ) {
-    // ... (保持不變) ...
     var remainingTime by remember { mutableStateOf("") }
-
     if (isScheduler) {
         LaunchedEffect(key1 = group.schedulerLeaseExpiresAt) {
             val expiresAt = group.schedulerLeaseExpiresAt?.time ?: 0L
             while (System.currentTimeMillis() < expiresAt) {
                 val remainingMillis = expiresAt - System.currentTimeMillis()
                 if (remainingMillis <= 0) break
-
                 val minutes = remainingMillis / 60000
                 val seconds = (remainingMillis % 60000) / 1000
-
                 remainingTime = String.format("剩下 %02d:%02d", minutes, seconds)
-
                 kotlinx.coroutines.delay(1000)
             }
             remainingTime = "租約已到期"
         }
     }
-
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -541,27 +499,13 @@ fun SchedulerStatusCard(
             }
         )
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "排班者狀態",
-                style = MaterialTheme.typography.titleSmall
-            )
-
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "排班者狀態", style = MaterialTheme.typography.titleSmall)
             when {
                 isScheduler -> {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Text("你正在排班中", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                         }
                         if (remainingTime.isNotEmpty()) {
@@ -575,23 +519,13 @@ fun SchedulerStatusCard(
                     }
                 }
                 group.isSchedulerActive() -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                         Text("${group.schedulerName} 正在排班")
                     }
                 }
                 canSchedule -> {
-                    Button(
-                        onClick = onClaimClick,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    Button(onClick = onClaimClick, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Schedule, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("認領排班權")
@@ -601,17 +535,11 @@ fun SchedulerStatusCard(
         }
     }
 }
-/**
- * 預約狀態卡片
- */
 @Composable
-fun ReservationStatusCard(
-    group: stevedaydream.scheduler.data.model.Group,
-    isScheduler: Boolean,
-    onToggleReservation: () -> Unit,
-    onNavigateToReservation: () -> Unit
-) {
-    // ... (保持不變) ...
+fun ReservationStatusCard(group: stevedaydream.scheduler.data.model.Group,
+                          isScheduler: Boolean,
+                          onToggleReservation: () -> Unit,
+                          onNavigateToReservation: () -> Unit ) { /* ... 內容不變 ... */
     val statusText = when (group.reservationStatus) {
         "active" -> "預約進行中"
         "closed" -> "預約已關閉"
@@ -622,79 +550,65 @@ fun ReservationStatusCard(
         "closed" -> "重新開啟"
         else -> "管理預約"
     }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "${DateUtils.getDisplayMonth(group.reservationMonth ?: "")} 班表預約",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(text = "${DateUtils.getDisplayMonth(group.reservationMonth ?: "")} 班表預約", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onTertiaryContainer
             )
-
             if (group.reservationStatus == "active") {
-                Button(onClick = onNavigateToReservation, modifier = Modifier.fillMaxWidth()) {
-                    Text("前往預約")
-                }
+                Button(onClick = onNavigateToReservation, modifier = Modifier.fillMaxWidth()) { Text("前往預約") }
             }
-
             if (isScheduler) {
-                OutlinedButton(onClick = onToggleReservation, modifier = Modifier.fillMaxWidth()) {
-                    Text(buttonText)
-                }
+                OutlinedButton(onClick = onToggleReservation, modifier = Modifier.fillMaxWidth()) { Text(buttonText) }
             }
         }
     }
 }
 
-// --- ✅ 8. 修改 SchedulerFunctionCard，加入預覽按鈕 ---
+
+// --- ✅ 修改 SchedulerFunctionCard ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SchedulerFunctionCard(
     isGenerating: Boolean,
-    isPreviewGenerating: Boolean, // 新增
+    isPreviewGenerating: Boolean,
     selectedMonth: String,
-    selectedStrategy: SchedulingStrategy,
-    onStrategyChange: (SchedulingStrategy) -> Unit,
+    // ✅ 參數類型改為 SchedulingStrategyType
+    selectedStrategy: SchedulingStrategyType,
+    onStrategyChange: (SchedulingStrategyType) -> Unit,
     onShowMonthPicker: () -> Unit,
     onNavigateToShiftTypeSettings: () -> Unit,
     onNavigateToRules: () -> Unit,
     onNavigateToManpower: () -> Unit,
     onNavigateToManualSchedule: () -> Unit,
     onGenerate: () -> Unit,
-    onGeneratePreview: () -> Unit // 新增
+    onGeneratePreview: () -> Unit
 ) {
     var strategyDropdownExpanded by remember { mutableStateOf(false) }
-    val strategies = SchedulingStrategy.values()
-    val isAnyProcessRunning = isGenerating || isPreviewGenerating // 判斷是否有任何生成在進行
+    // ✅ 使用 SchedulingStrategyType.values()
+    val strategies = SchedulingStrategyType.values()
+    val isAnyProcessRunning = isGenerating || isPreviewGenerating
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "排班功能",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(text = "排班功能", style = MaterialTheme.typography.titleMedium)
 
             // --- 排班策略選擇 ---
             ExposedDropdownMenuBox(
@@ -703,9 +617,13 @@ private fun SchedulerFunctionCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
-                    value = selectedStrategy.displayName,
-                    onValueChange = {}, // ReadOnly
-                    readOnly = true,
+                    // ✅ 根據 SchedulingStrategyType 顯示名稱
+                    value = when(selectedStrategy) {
+                        SchedulingStrategyType.GENERAL -> "通用設定"
+                        SchedulingStrategyType.HOSPITAL_GREEDY -> "醫院設定 (貪婪法)"
+                        SchedulingStrategyType.HOSPITAL_BACKTRACKING -> "醫院設定 (回溯法)"
+                    },
+                    onValueChange = {}, readOnly = true,
                     label = { Text("排班策略") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = strategyDropdownExpanded) },
                     modifier = Modifier.menuAnchor()
@@ -716,7 +634,12 @@ private fun SchedulerFunctionCard(
                 ) {
                     strategies.forEach { strategy ->
                         DropdownMenuItem(
-                            text = { Text(strategy.displayName) },
+                            // ✅ 根據 SchedulingStrategyType 顯示名稱
+                            text = { Text( when(strategy) {
+                                SchedulingStrategyType.GENERAL -> "通用設定"
+                                SchedulingStrategyType.HOSPITAL_GREEDY -> "醫院設定 (貪婪法)"
+                                SchedulingStrategyType.HOSPITAL_BACKTRACKING -> "醫院設定 (回溯法)"
+                            } ) },
                             onClick = {
                                 onStrategyChange(strategy)
                                 strategyDropdownExpanded = false
@@ -726,61 +649,37 @@ private fun SchedulerFunctionCard(
                 }
             }
 
-
-            // --- 功能按鈕 ---
-            OutlinedButton(
-                onClick = onShowMonthPicker,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            // --- 功能按鈕 (保持不變) ---
+            OutlinedButton(onClick = onShowMonthPicker, modifier = Modifier.fillMaxWidth()) { /* ... */
                 Icon(Icons.Default.CalendarMonth, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("選擇月份: ${DateUtils.getDisplayMonth(selectedMonth)}")
             }
-            OutlinedButton(
-                onClick = onNavigateToShiftTypeSettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            OutlinedButton(onClick = onNavigateToShiftTypeSettings, modifier = Modifier.fillMaxWidth()) { /* ... */
                 Icon(Icons.Default.Palette, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("班別設定")
             }
-            OutlinedButton(
-                onClick = onNavigateToRules,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            OutlinedButton(onClick = onNavigateToRules, modifier = Modifier.fillMaxWidth()) { /* ... */
                 Icon(Icons.Default.Rule, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("規則設定")
             }
-            OutlinedButton(
-                onClick = onNavigateToManpower,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            OutlinedButton(onClick = onNavigateToManpower, modifier = Modifier.fillMaxWidth()) { /* ... */
                 Icon(Icons.Default.People, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("人力規劃儀表板")
             }
-            OutlinedButton(
-                onClick = onNavigateToManualSchedule,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            OutlinedButton(onClick = onNavigateToManualSchedule, modifier = Modifier.fillMaxWidth()) { /* ... */
                 Icon(Icons.Default.Edit, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("手動排班")
             }
 
-            // --- ✅ 9. 新增預覽按鈕 ---
-            OutlinedButton(
-                onClick = onGeneratePreview,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isAnyProcessRunning // 任何生成進行中則禁用
-            ) {
+            // --- 預覽按鈕 (保持不變) ---
+            OutlinedButton(onClick = onGeneratePreview, modifier = Modifier.fillMaxWidth(), enabled = !isAnyProcessRunning) { /* ... */
                 if (isPreviewGenerating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.primary, // 使用 OutlineButton 顏色
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("預覽生成中...")
                 } else {
@@ -790,91 +689,48 @@ private fun SchedulerFunctionCard(
                 }
             }
 
-
-            // --- ✅ 10. 修改原生成按鈕 ---
-            Button(
-                onClick = onGenerate,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isAnyProcessRunning // 任何生成進行中則禁用
-            ) {
+            // --- 生成並儲存按鈕 (保持不變) ---
+            Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth(), enabled = !isAnyProcessRunning) { /* ... */
                 if (isGenerating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("生成儲存中...") // 修改文字
+                    Text("生成儲存中...")
                 } else {
                     Icon(Icons.Default.AutoAwesome, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("生成並儲存班表") // 修改文字
+                    Text("生成並儲存班表")
                 }
             }
-        }
-    }
-}
+        } // end Column
+    } // end Card
+} // end SchedulerFunctionCard
 
-// --- ✅ 11. 新增：預覽結果 Dialog ---
+// --- Preview Dialog (保持不變) ---
 @Composable
-fun PreviewScheduleDialog(
-    result: ScheduleGenerator.ScheduleGenerationResult,
-    onDismiss: () -> Unit,
-    onSave: () -> Unit
-) {
+fun PreviewScheduleDialog( result: ScheduleGenerator.ScheduleGenerationResult,
+                           onDismiss: () -> Unit,
+                           onSave: () -> Unit) { /* ... 內容不變 ... */
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("預排班預覽 (${DateUtils.getDisplayMonth(result.schedule.month)})") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    Text("班表分數: ${result.score}", style = MaterialTheme.typography.titleMedium)
-                }
+                item { Text("班表分數: ${result.score}", style = MaterialTheme.typography.titleMedium) }
                 if (result.warnings.isNotEmpty()) {
-                    item {
-                        Text(
-                            "警告 (${result.warnings.size}):",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.secondary // 使用不同顏色區分
-                        )
-                    }
-                    items(result.warnings) { warning ->
-                        Text(" - $warning", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                    }
+                    item { Text("警告 (${result.warnings.size}):", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary) }
+                    items(result.warnings) { Text(" - $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
                 }
                 if (result.violations.isNotEmpty()) {
-                    item {
-                        Text(
-                            "規則違反 (${result.violations.size}):",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    items(result.violations) { violation ->
-                        Text(" - $violation", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
+                    item { Text("規則違反 (${result.violations.size}):", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) }
+                    items(result.violations) { Text(" - $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 }
                 if (result.warnings.isEmpty() && result.violations.isEmpty()) {
-                    item {
-                        Text("班表看起來不錯！沒有明顯的警告或規則違反。")
-                    }
+                    item { Text("班表看起來不錯！沒有明顯的警告或規則違反。") }
                 }
-                // 可以選擇性加入顯示輪替預覽 (如果需要)
-                // item { Text("輪替預覽: (此處可顯示 rotationSchedule 內容)") }
             }
         },
-        confirmButton = {
-            Button(onClick = onSave) {
-                Text("儲存此班表")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("關閉預覽")
-            }
-        }
+        confirmButton = { Button(onClick = onSave) { Text("儲存此班表") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("關閉預覽") } }
     )
 }
-
-
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
