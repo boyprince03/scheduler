@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // 使用 AutoMirrored
+import androidx.compose.material.icons.automirrored.filled.ExitToApp // 使用 AutoMirrored
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +28,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.lifecycle.viewmodel.compose.viewModel // 確保 viewModel() 被 import
 import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 // ✅ 1. 移除舊的 SchedulingStrategy Enum 定義
 // enum class SchedulingStrategy(val displayName: String) { ... }
@@ -44,7 +45,8 @@ fun ScheduleScreen(
     onNavigateToShiftTypeSettings: (String, String) -> Unit,
     onNavigateToScheduleDetail: (String, String, String) -> Unit,
     onNavigateToManpower: (String, String, String) -> Unit,
-    onNavigateToReservation: (String, String, String) -> Unit
+    onNavigateToReservation: (String, String, String) -> Unit,
+    onNavigateToInteractiveSchedule: (String, String, String) -> Unit // New parameter
 ) {
     // --- States (大部分保持不變) ---
     val group by viewModel.group.collectAsState()
@@ -91,13 +93,13 @@ fun ScheduleScreen(
                 title = { Text(group?.groupName ?: "排班") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") // 使用 AutoMirrored
                     }
                 },
                 actions = {
                     if (isScheduler) {
                         IconButton(onClick = { viewModel.releaseScheduler() }) {
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權")
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "釋放排班權") // 使用 AutoMirrored
                         }
                     }
                 }
@@ -166,7 +168,9 @@ fun ScheduleScreen(
                         onNavigateToManpower = { onNavigateToManpower(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                         onNavigateToManualSchedule = { onNavigateToManualSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth) },
                         onGenerate = { viewModel.generateSmartSchedule(selectedMonth) },
-                        onGeneratePreview = { viewModel.generatePreviewSchedule(selectedMonth) }
+                        onGeneratePreview = { viewModel.generatePreviewSchedule(selectedMonth) },
+                        viewModel = viewModel, // Pass viewModel or ids
+                        onNavigateToInteractiveSchedule = onNavigateToInteractiveSchedule // Pass the callback
                     )
                 }
 
@@ -593,7 +597,9 @@ private fun SchedulerFunctionCard(
     onNavigateToManpower: () -> Unit,
     onNavigateToManualSchedule: () -> Unit,
     onGenerate: () -> Unit,
-    onGeneratePreview: () -> Unit
+    onGeneratePreview: () -> Unit,
+    viewModel: ScheduleViewModel, // 新增 viewModel 參數
+    onNavigateToInteractiveSchedule: (String, String, String) -> Unit // 新增 onNavigateToInteractiveSchedule 參數
 ) {
     var strategyDropdownExpanded by remember { mutableStateOf(false) }
     // ✅ 使用 SchedulingStrategyType.values()
@@ -675,7 +681,19 @@ private fun SchedulerFunctionCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("手動排班")
             }
-
+// Add button for Interactive Scheduling
+            OutlinedButton(
+                onClick = {
+                    onNavigateToInteractiveSchedule(viewModel.currentOrgId, viewModel.currentGroupId, selectedMonth)
+                    // OR if passing ids: onNavigateToInteractiveSchedule(orgId, groupId, selectedMonth)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isAnyProcessRunning // Disable if another process is running
+            ) {
+                Icon(Icons.Default.Tune, contentDescription = null) // Example Icon
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("逐步互動排班")
+            }
             // --- 預覽按鈕 (保持不變) ---
             OutlinedButton(onClick = onGeneratePreview, modifier = Modifier.fillMaxWidth(), enabled = !isAnyProcessRunning) { /* ... */
                 if (isPreviewGenerating) {

@@ -1,3 +1,4 @@
+// 修改開始
 package stevedaydream.scheduler.presentation.schedule
 
 import androidx.compose.foundation.BorderStroke
@@ -9,7 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // 使用 AutoMirrored
+import androidx.compose.material.icons.filled.* // 保持 Filled icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import stevedaydream.scheduler.data.model.ShiftType
 import stevedaydream.scheduler.data.model.User
+// ▼▼▼ 導入共用的 Composable ▼▼▼
+import stevedaydream.scheduler.presentation.common.ShiftLegend
+import stevedaydream.scheduler.presentation.common.ShiftSelectorDialog
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 import stevedaydream.scheduler.util.DateUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +58,7 @@ fun ManualScheduleScreen(
                 title = { Text("手動排班 - ${DateUtils.getDisplayMonth(viewModel.currentMonth)}") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") // Use AutoMirrored
                     }
                 },
                 actions = {
@@ -88,8 +94,9 @@ fun ManualScheduleScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // 班別圖例
+                // ▼▼▼ 使用導入的 ShiftLegend ▼▼▼
                 ShiftLegend(shiftTypes = shiftTypes)
+                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
                 Divider()
 
@@ -109,7 +116,7 @@ fun ManualScheduleScreen(
         }
     }
 
-    // 班別選擇對話框
+    // ▼▼▼ 使用導入的 ShiftSelectorDialog ▼▼▼
     if (showShiftSelector && selectedUser != null && selectedDay != null) {
         ShiftSelectorDialog(
             shiftTypes = shiftTypes,
@@ -121,52 +128,16 @@ fun ManualScheduleScreen(
             }
         )
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 }
 
-@Composable
-fun ShiftLegend(shiftTypes: List<ShiftType>) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.Start
-    ) {
-        item {
-            Text(
-                text = "班別說明",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
-        items(shiftTypes) { shift ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Surface(
-                    modifier = Modifier.size(32.dp),
-                    color = Color(android.graphics.Color.parseColor(shift.color)),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = shift.shortCode,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-                Text(
-                    text = "${shift.name} (${shift.startTime} - ${shift.endTime})",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-    }
-}
+// ▼▼▼ 移除本地的 ShiftLegend 和 ShiftSelectorDialog 定義 ▼▼▼
+// @Composable
+// fun ShiftLegend(...) { ... }
+//
+// @Composable
+// fun ShiftSelectorDialog(...) { ... }
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 @Composable
 fun ScheduleTable(
@@ -210,7 +181,7 @@ fun ScheduleTable(
                         .width(60.dp)
                         .fillMaxHeight(),
                     color = if (isWeekend)
-                        MaterialTheme.colorScheme.errorContainer
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha=0.3f) // 淺紅色
                     else
                         MaterialTheme.colorScheme.surfaceVariant,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
@@ -268,7 +239,8 @@ fun ScheduleTable(
                             .fillMaxHeight()
                             .clickable { onCellClick(user, day) },
                         color = shift?.color?.let {
-                            Color(android.graphics.Color.parseColor(it)).copy(alpha = 0.3f)
+                            // Handle potential parsing errors gracefully
+                            try { Color(android.graphics.Color.parseColor(it)).copy(alpha = 0.3f) } catch (e: Exception) { Color.Transparent }
                         } ?: Color.Transparent,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
@@ -284,72 +256,4 @@ fun ScheduleTable(
         }
     }
 }
-
-@Composable
-fun ShiftSelectorDialog(
-    shiftTypes: List<ShiftType>,
-    currentShiftId: String?,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("選擇班別") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                shiftTypes.forEach { shift ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(shift.id) },
-                        color = if (shift.id == currentShiftId)
-                            MaterialTheme.colorScheme.primaryContainer
-                        else
-                            MaterialTheme.colorScheme.surface,
-                        shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(
-                            1.dp,
-                            Color(android.graphics.Color.parseColor(shift.color))
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                color = Color(android.graphics.Color.parseColor(shift.color)),
-                                shape = MaterialTheme.shapes.small
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = shift.shortCode,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                            Column {
-                                Text(
-                                    text = shift.name,
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    text = "${shift.startTime} - ${shift.endTime}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
+// 修改結束

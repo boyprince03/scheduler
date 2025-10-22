@@ -1,16 +1,27 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) // <--- 加入 ExperimentalLayoutApi
 package stevedaydream.scheduler.presentation.common
 
+import androidx.compose.foundation.BorderStroke // <--- 新增
+import androidx.compose.foundation.background // <--- 新增
+import androidx.compose.foundation.border // <--- 新增
+import androidx.compose.foundation.clickable // <--- 新增
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn // <--- 新增
+import androidx.compose.foundation.lazy.items // <--- 新增
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip // <--- 新增
+import androidx.compose.ui.graphics.Color // <--- 新增
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import stevedaydream.scheduler.data.model.ShiftType // <--- 新增: 導入 ShiftType
+import stevedaydream.scheduler.util.toComposeColor // <--- 新增: 導入 toComposeColor
 
 /**
  * 載入指示器
@@ -219,7 +230,7 @@ fun InfoCard(
             }
             if (onClick != null) {
                 Icon(
-                    imageVector = Icons.Default.ChevronRight,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight, // Use AutoMirrored
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -264,12 +275,140 @@ fun DividerWithText(
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // ✅ 改用 Divider
-        Divider(modifier = Modifier.weight(1f))
+        HorizontalDivider(modifier = Modifier.weight(1f)) // Use HorizontalDivider
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Divider(modifier = Modifier.weight(1f))
+        HorizontalDivider(modifier = Modifier.weight(1f)) // Use HorizontalDivider
     }
 }
+
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 新增 ShiftLegend ▼▼▼▼▼▼▼▼▼▼▼▼
+/**
+ * 班別圖例 (用於顯示班別顏色和名稱)
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ShiftLegend(
+    shiftTypes: List<ShiftType>,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "班別圖例",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            shiftTypes.forEach { shift ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(shift.color.toComposeColor(), shape = MaterialTheme.shapes.small)
+                    )
+                    Text(
+                        text = "${shift.shortCode}: ${shift.name}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+    }
+}
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 新增 ShiftLegend ▲▲▲▲▲▲▲▲▲▲▲▲
+
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 新增 ShiftSelectorDialog ▼▼▼▼▼▼▼▼▼▼▼▼
+/**
+ * 班別選擇對話框 (用於手動排班和互動排班)
+ */
+@Composable
+fun ShiftSelectorDialog(
+    shiftTypes: List<ShiftType>,
+    currentShiftId: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit // 傳遞班別 ID，空字串表示清除
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("選擇班別") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 班別選項
+                shiftTypes.forEach { shift ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(shift.id) }, // 點擊時傳遞 shift.id
+                        color = if (shift.id == currentShiftId)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.surface,
+                        shape = MaterialTheme.shapes.small,
+                        border = BorderStroke(
+                            1.dp,
+                            // 處理顏色解析錯誤
+                            try { shift.color.toComposeColor() } catch (e: Exception) { MaterialTheme.colorScheme.outline }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                // 處理顏色解析錯誤
+                                color = try { shift.color.toComposeColor() } catch (e: Exception) { Color.Gray },
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = shift.shortCode,
+                                        color = Color.White // 假設白色文字永遠可讀
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = shift.name,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    text = "${shift.startTime} - ${shift.endTime}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 清除按鈕
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider() // Use HorizontalDivider
+                TextButton(
+                    onClick = { onSelect("") }, // 點擊時傳遞空字串
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Text("清除選擇 / 設為未排班")
+                }
+            }
+        },
+        confirmButton = {}, // 確認按鈕留空，因為點擊選項即選擇
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 新增 ShiftSelectorDialog ▲▲▲▲▲▲▲▲▲▲▲▲

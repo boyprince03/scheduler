@@ -25,6 +25,7 @@ import stevedaydream.scheduler.presentation.user.BasicInfoScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import stevedaydream.scheduler.presentation.schedule.ShiftReservationScreen
+import stevedaydream.scheduler.presentation.schedule.InteractiveScheduleStepScreen // Import the new screen
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
@@ -81,6 +82,11 @@ sealed class Screen(val route: String) {
         fun createRoute(orgId: String) = "review_requests/$orgId"
     }
     object QRScanner : Screen("qr_scanner")
+    // Add the new route for interactive scheduling
+    object InteractiveSchedule : Screen("interactive_schedule/{orgId}/{groupId}/{month}") {
+        fun createRoute(orgId: String, groupId: String, month: String) =
+            "interactive_schedule/$orgId/$groupId/$month"
+    }
 }
 
 
@@ -226,6 +232,9 @@ fun NavigationGraph(
                 // ▼▼▼▼▼▼▼▼▼▼▼▼ 修正點：補上 onNavigateToReservation 參數 ▼▼▼▼▼▼▼▼▼▼▼▼
                 onNavigateToReservation = { org, group, month ->
                     navController.navigate(Screen.ShiftReservation.createRoute(org, group, month))
+                },
+                onNavigateToInteractiveSchedule = { org, group, month ->
+                    navController.navigate(Screen.InteractiveSchedule.createRoute(org, group, month))
                 }
             )
         }
@@ -290,6 +299,18 @@ fun NavigationGraph(
         composable(Screen.UserProfile.route) {
             UserProfileScreen(
                 onBackClick = { navController.popBackStack() }
+            )
+        }
+        // Add composable for the new interactive screen
+        composable(Screen.InteractiveSchedule.route) { backStackEntry ->
+            // ViewModel will get orgId, groupId, month from SavedStateHandle
+            InteractiveScheduleStepScreen(
+                onBackClick = { navController.popBackStack() },
+                onComplete = {
+                    // Navigate back to ScheduleScreen after completion
+                    navController.popBackStack()
+                    // Optionally, you could navigate to the detail screen of the created schedule
+                }
             )
         }
     }
