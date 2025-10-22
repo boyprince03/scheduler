@@ -18,10 +18,20 @@ import stevedaydream.scheduler.data.local.SchedulerDatabase
 import stevedaydream.scheduler.data.remote.FirebaseDataSource
 import stevedaydream.scheduler.data.repository.SchedulerRepositoryImpl
 import stevedaydream.scheduler.domain.repository.SchedulerRepository
-import stevedaydream.scheduler.domain.scheduling.RotationScheduler // 引入 RotationScheduler
+// 引入排班相關類別
+import stevedaydream.scheduler.domain.scheduling.*
+// 引入具體的規則實作 (Interface)
+import stevedaydream.scheduler.domain.scheduling.rules.MaxConsecutiveWorkDaysRule
+import stevedaydream.scheduler.domain.scheduling.rules.NightShiftFollowupRule
+// Interface import needed here for explicit type in RuleEngine provider
+import stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule
+// Data class alias remains useful for BacktrackingSolver factory
+import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
+import stevedaydream.scheduler.data.model.User
+import stevedaydream.scheduler.data.model.ShiftType
+import stevedaydream.scheduler.domain.repository.scheduling.rules.MinRestBetweenShiftsRule
 import javax.inject.Qualifier
 import javax.inject.Singleton
-import stevedaydream.scheduler.domain.scheduling.ScheduleGenerator
 
 
 @Qualifier
@@ -32,6 +42,7 @@ annotation class ApplicationScope
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
+    // --- Firebase, Database, DataSource, CoroutineScope, Repository providers ---
     @Provides
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth = Firebase.auth
@@ -40,34 +51,28 @@ object AppModule {
     @Singleton
     fun provideFirebaseFirestore(): FirebaseFirestore {
         return Firebase.firestore.apply {
+            // 注意： setPersistenceEnabled 在較新版本已棄用，
+            // 若要禁用離線快取，建議檢查最新 Firebase SDK 文件
+            // 通常預設是啟用的，若無特殊需求可移除此設定
+            /*
             firestoreSettings = com.google.firebase.firestore.FirebaseFirestoreSettings.Builder()
-                .setPersistenceEnabled(false) // 關閉 Firestore 本地快取,因為我們使用 Room
+                .setPersistenceEnabled(false) // Deprecated
                 .build()
+            */
         }
     }
 
     @Provides
     @Singleton
-    fun provideSchedulerDatabase(
-        @ApplicationContext context: Context
-    ): SchedulerDatabase {
-        // ▼▼▼▼▼▼▼▼▼▼▼▼ 修改开始 ▼▼▼▼▼▼▼▼▼▼▼▼
-        return Room.databaseBuilder(
-            context,
-            SchedulerDatabase::class.java,
-            "scheduler_database"
-        )
-            .fallbackToDestructiveMigration() // ✅ 允許在遷移失敗時破壞性地重建資料庫
+    fun provideSchedulerDatabase(@ApplicationContext context: Context): SchedulerDatabase {
+        return Room.databaseBuilder(context, SchedulerDatabase::class.java, "scheduler_database")
+            .fallbackToDestructiveMigration()
             .build()
-        // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改结束 ▲▲▲▲▲▲▲▲▲▲▲▲
     }
 
     @Provides
     @Singleton
-    fun provideFirebaseDataSource(
-        firestore: FirebaseFirestore,
-        auth: FirebaseAuth
-    ): FirebaseDataSource {
+    fun provideFirebaseDataSource(firestore: FirebaseFirestore, auth: FirebaseAuth): FirebaseDataSource {
         return FirebaseDataSource(firestore, auth)
     }
 
@@ -83,20 +88,106 @@ object AppModule {
     fun provideSchedulerRepository(
         remoteDataSource: FirebaseDataSource,
         database: SchedulerDatabase,
-        auth: FirebaseAuth, // <-- 新增 FirebaseAuth
+        auth: FirebaseAuth,
         @ApplicationScope externalScope: CoroutineScope
     ): SchedulerRepository {
-        // <-- 將 auth 傳入建構子
         return SchedulerRepositoryImpl(remoteDataSource, database, auth, externalScope)
     }
+
+
+    // ▼▼▼▼▼▼▼▼▼▼▼▼ Modified Scheduling Providers ▼▼▼▼▼▼▼▼▼▼▼▼
+
+    // REMOVE the provider for the list of interfaces
+    /*
     @Provides
     @Singleton
-    fun provideScheduleGenerator(): ScheduleGenerator {
-        return ScheduleGenerator()
+    fun provideAvailableSchedulingRules(): List<SchedulingRule> { // Using interface import
+        return listOf(
+            MaxConsecutiveWorkDaysRule(),
+            MinRestBetweenShiftsRule(),
+            NightShiftFollowupRule()
+        )
     }
+    */
+
+    /**
+     * Provide RuleEngine instance directly, instantiating rules inside.
+     */
     @Provides
     @Singleton
-    fun provideRotationScheduler(): RotationScheduler { // 新增 Provide 方法
+    fun provideRuleEngine(): RuleEngine { // No longer takes List<Interface> as parameter
+        // Explicitly type the list variable with the Interface path
+        val availableRules: List<stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule> = listOf(
+            MaxConsecutiveWorkDaysRule(),
+            MinRestBetweenShiftsRule(),
+            NightShiftFollowupRule()
+            // Add other rule implementations here...
+        )
+        return RuleEngine(availableRules)
+    }
+
+    /**
+     * Provide ScheduleInitializer instance (Depends on RuleEngine)
+     */
+    @Provides
+    @Singleton
+    fun provideScheduleInitializer(ruleEngine: RuleEngine): ScheduleInitializer {
+        return ScheduleInitializer(ruleEngine)
+    }
+
+    /**
+     * Provide GreedyScheduleFiller instance (Depends on RuleEngine)
+     */
+    @Provides
+    @Singleton
+    fun provideGreedyScheduleFiller(ruleEngine: RuleEngine): GreedyScheduleFiller {
+        return GreedyScheduleFiller(ruleEngine)
+    }
+
+    /**
+     * Provide BacktrackingSolver factory function (Depends on RuleEngine)
+     */
+    @Provides
+    fun provideBacktrackingSolverFactory(ruleEngine: RuleEngine): (List<User>, Int, List<String>, Map<String, Map<String, String>>, Map<String, Map<String, Int>>, List<ShiftType>, List<SchedulingRuleData>, RuleEngine) -> BacktrackingSolver {
+        // This provider now correctly depends only on RuleEngine
+        return { users, numDays, dates, initialSchedule, initialQuotas, shiftTypes, dbRules, engine ->
+            // Pass the 'engine' parameter received during invocation (which should be the same as ruleEngine injected here)
+            BacktrackingSolver(users, numDays, dates, initialSchedule, initialQuotas, shiftTypes, dbRules, engine)
+        }
+    }
+
+    /**
+     * Provide ScheduleOptimizer instance (Depends on RuleEngine)
+     */
+    @Provides
+    @Singleton
+    fun provideScheduleOptimizer(ruleEngine: RuleEngine): ScheduleOptimizer {
+        return ScheduleOptimizer(ruleEngine)
+    }
+
+    /**
+     * Provide ScheduleGenerator instance (Depends on Initializer, Filler, Factory, Optimizer, RuleEngine)
+     */
+    @Provides
+    @Singleton
+    fun provideScheduleGenerator(
+        initializer: ScheduleInitializer,
+        greedyFiller: GreedyScheduleFiller,
+        // Factory function type signature must match what provideBacktrackingSolverFactory returns
+        backtrackingSolverFactory: (List<User>, Int, List<String>, Map<String, Map<String, String>>, Map<String, Map<String, Int>>, List<ShiftType>, List<SchedulingRuleData>, RuleEngine) -> BacktrackingSolver,
+        optimizer: ScheduleOptimizer,
+        ruleEngine: RuleEngine
+    ): ScheduleGenerator {
+        return ScheduleGenerator(initializer, greedyFiller, backtrackingSolverFactory, optimizer, ruleEngine)
+    }
+
+    /**
+     * Provide RotationScheduler instance (No dependencies needed here)
+     */
+    @Provides
+    @Singleton
+    fun provideRotationScheduler(): RotationScheduler {
         return RotationScheduler()
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲ Modified Scheduling Providers ▲▲▲▲▲▲▲▲▲▲▲▲
 }
