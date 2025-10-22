@@ -8,7 +8,7 @@ import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
 import stevedaydream.scheduler.domain.scheduling.rules.RuleViolation
 import stevedaydream.scheduler.util.DateUtils
 import java.util.*
-// 移除 math.floor 的 import，因為 ScheduleInitializer 中會處理
+import javax.inject.Inject // ✅ 引入 Inject
 
 // SchedulingStrategyType Enum remains the same
 enum class SchedulingStrategyType {
@@ -21,11 +21,11 @@ enum class SchedulingStrategyType {
  * 排班生成器 (協調器)
  * 負責協調 Initializer, Filler, Optimizer
  */
-class ScheduleGenerator(
+class ScheduleGenerator @Inject constructor( // ✅ 加入 @Inject constructor
     // 注入新的組件
     private val initializer: ScheduleInitializer,
     private val greedyFiller: GreedyScheduleFiller,
-    private val backtrackingSolverFactory: (List<User>, Int, List<String>, Map<String, Map<String, String>>, Map<String, Map<String, Int>>, List<ShiftType>, List<SchedulingRuleData>, RuleEngine) -> BacktrackingSolver, // 使用工廠模式注入 Solver
+    private val backtrackingSolverFactory: BacktrackingSolverFactory, // ✅ 改為注入介面
     private val optimizer: ScheduleOptimizer,
     private val ruleEngine: RuleEngine // RuleEngine 可能 Initializer, Filler, Optimizer 都需要
 ) {
@@ -38,8 +38,6 @@ class ScheduleGenerator(
         val violations: List<String>,
         val warnings: List<String>
     )
-
-    // RuleEngine 和 allAvailableRules 移到 AppModule 提供，這裡不再需要
 
     /**
      * 生成排班表的主函數 (重構)
@@ -103,12 +101,12 @@ class ScheduleGenerator(
                         initResult.remainingOffQuota.mapValues { mapOf(offShift.id to it.value) }
                             .mapValues { entry -> (initResult.remainingWorkQuotas[entry.key]?.toMap() ?: emptyMap()) + entry.value }
 
-                // 使用工廠創建 Solver 實例
-                val solver = backtrackingSolverFactory(
+                // ✅ 使用注入的工廠介面創建 Solver 實例
+                val solver = backtrackingSolverFactory.create(
                     orderedUsers, dates.size, dates,
                     initResult.initialAssignments.mapValues { it.value.toMap() }, // Pass immutable
                     solverInitialQuotas, // Pass immutable, combined quotas
-                    shiftTypes, rules, ruleEngine
+                    shiftTypes, rules, ruleEngine // 傳遞 ruleEngine 給 Solver
                 )
 
                 if (solver.solve()) {
@@ -197,19 +195,6 @@ class ScheduleGenerator(
             violationsFromProcess = finalViolations // 傳遞所有累積的違規訊息
         )
     }
-
-    // --- 移除已搬走的 generateHospitalScheduleGreedy 和 generateGeneralSchedule ---
-    // private fun generateHospitalScheduleGreedy(...) { ... }
-    // private fun generateGeneralSchedule(...) { ... }
-
-    // --- 移除已搬走的 calculateAllQuotas, apply*, assign*, fill* ---
-    // private fun calculateAllQuotas(...) { ... }
-    // private fun applyPreScheduledRotationsStrict(...) { ... }
-    // private fun applyApprovedLeavesStrict(...) { ... }
-    // private fun applyReservationsStrict(...) { ... }
-    // private fun assignShiftTypeStrict(...) { ... }
-    // private fun fillRemainingWithOffStrict(...) { ... }
-
 
     // --- 保留 checkAllHardRulesRealtime, finalizeScheduleStrict, validateAllUsers, buildResult, countAssignedShifts ---
     // Note: checkAllHardRulesRealtime 已經搬到 Initializer 和 Filler 內部了，這裡可以移除
@@ -319,4 +304,3 @@ class ScheduleGenerator(
     }
 }
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
-

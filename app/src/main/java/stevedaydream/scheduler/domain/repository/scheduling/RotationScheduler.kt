@@ -1,4 +1,3 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 新檔案開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
 import stevedaydream.scheduler.data.model.Group // 假設 Group 包含 userOrder 和 rotationState
@@ -6,32 +5,27 @@ import stevedaydream.scheduler.data.model.ShiftType
 import stevedaydream.scheduler.data.model.User
 import stevedaydream.scheduler.util.DateUtils
 import java.util.Calendar
+import javax.inject.Inject // ✅ 1. 引入 Inject
 
-// 定義輪替規則的資料結構 (可以根據需要在 Models.kt 中定義)
-// 簡化版：只包含星期幾
+// RotationRuleConfig data class 保持不變
 data class RotationRuleConfig(
     val shiftTypeId: String,
     val daysOfWeek: Set<Int> // 0=週日, 1=週一...6=週六
-    // 可以加入 order: RotationOrder (升冪/降冪) 等
 )
 
-// 計算結果的資料結構
+// RotationCalculationResult data class 保持不變
 data class RotationCalculationResult(
     val preScheduledRotations: Map<String, Map<String, String>>, // Map<UserId, Map<Day, ShiftId>>
     val nextRotationState: Map<String, Int> // Map<ShiftTypeId, nextUserIndex>
 )
 
-class RotationScheduler {
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+class RotationScheduler @Inject constructor() { // ✅ 2. 加入 @Inject constructor()
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
 
     /**
      * 計算指定月份的輪替預排班表
-     *
-     * @param month 要計算的月份 (yyyy-MM)
-     * @param orderedUsers 依管理員設定排序的使用者列表
-     * @param shiftTypes 所有班別類型 (用於規則檢查)
-     * @param rotationRules Map<ShiftTypeId, RotationRuleConfig> 定義哪些班別需要輪替及規則
-     * @param initialRotationState Map<ShiftTypeId, Int> 上個月結束時的輪替索引 (指向下個月第一個輪值者在 orderedUsers 中的 index)
-     * @return RotationCalculationResult 包含預排班表和下個月的起始狀態
+     * (方法內部保持不變)
      */
     fun calculateRotations(
         month: String,
@@ -40,7 +34,7 @@ class RotationScheduler {
         rotationRules: Map<String, RotationRuleConfig>, // Key: ShiftTypeId
         initialRotationState: Map<String, Int> // Key: ShiftTypeId, Value: index in orderedUsers
     ): RotationCalculationResult {
-
+        // ... (方法實作保持不變) ...
         val preScheduledRotations = mutableMapOf<String, MutableMap<String, String>>() // UserId -> Day -> ShiftId
         val currentRotationIndices = initialRotationState.toMutableMap() // 複製一份初始狀態來追蹤當前索引
         val dates = DateUtils.getDatesInMonth(month)
@@ -129,14 +123,17 @@ class RotationScheduler {
         return RotationCalculationResult(preScheduledRotations, currentRotationIndices)
     }
 
+
     /**
      * 檢查輪替排班時的硬性規則 (簡化版，只檢查前一天)
+     * (方法內部保持不變)
      */
     private fun checkRotationHardRules(
         userId: String, day: String, shiftIdToAssign: String,
         assignmentsSoFar: Map<String, Map<String, String>>, // Map<UserId, Map<Day, ShiftId>>
         nShiftId: String?, dShiftId: String?, sShiftId: String?
     ): Boolean {
+        // ... (方法實作保持不變) ...
         // 檢查前一天
         val yesterdayInt = day.toIntOrNull()?.minus(1) ?: 0
         if (yesterdayInt > 0) {
@@ -152,4 +149,3 @@ class RotationScheduler {
         return true
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 新檔案結束 ▲▲▲▲▲▲▲▲▲▲▲▲

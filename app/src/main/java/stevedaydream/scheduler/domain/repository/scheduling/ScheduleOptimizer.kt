@@ -1,18 +1,19 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 新檔案開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
 import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
+import javax.inject.Inject // ✅ 引入 Inject
 
 /**
  * 負責排班的第三階段：優化
  * - 根據軟性規則，透過交換等方式改善班表品質
  */
-class ScheduleOptimizer(
+class ScheduleOptimizer @Inject constructor( // ✅ 加入 @Inject constructor
     private val ruleEngine: RuleEngine // 可能需要 RuleEngine 來檢查硬性規則
 ) {
 
-    // 優化結果的資料結構
+    // OptimizationResult data class 保持不變
     data class OptimizationResult(
         val optimizedAssignments: Map<String, Map<String, String>>, // 優化後的班表
         val initialScore: Int,
@@ -93,4 +94,4 @@ class ScheduleOptimizer(
     }
 
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 新檔案結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

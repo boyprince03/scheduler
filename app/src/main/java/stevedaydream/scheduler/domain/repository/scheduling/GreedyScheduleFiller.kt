@@ -6,23 +6,23 @@ import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.scheduling.rules.RuleContext
 import stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule as SchedulingRuleInterface
 import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
+import javax.inject.Inject // ✅ 引入 Inject
 
 
 /**
  * 負責排班的第二階段：填充剩餘空格 (使用貪婪法)
  */
-class GreedyScheduleFiller(
+class GreedyScheduleFiller @Inject constructor( // ✅ 加入 @Inject constructor
     private val ruleEngine: RuleEngine // RuleEngine 已注入
 ) {
 
-    // ... (FillingResult data class 保持不變) ...
+    // FillingResult data class 保持不變
     data class FillingResult(
         val finalAssignments: Map<String, Map<String, String>>,
         val accumulatedViolations: List<String>
     )
 
-
-    // ... (fillSchedule 方法保持不變) ...
+    // fillSchedule 方法保持不變
     fun fillSchedule(
         initialResult: ScheduleInitializer.InitializationResult,
         dates: List<String>,
@@ -60,8 +60,7 @@ class GreedyScheduleFiller(
         )
     }
 
-
-    // ... (assignShiftTypeStrict 方法保持不變, 內部呼叫 checkAllHardRulesRealtime) ...
+    // assignShiftTypeStrict 方法保持不變, 內部呼叫 checkAllHardRulesRealtime
     private fun assignShiftTypeStrict(
         dates: List<String>, manpowerPlan: ManpowerPlan, shiftToAssign: ShiftType?,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
@@ -74,7 +73,7 @@ class GreedyScheduleFiller(
         offShift: ShiftType?,
         remainingOffQuota: MutableMap<String, Int>?,
         sortByShiftCount: Boolean = false
-    ) {
+    ) {/* ... */
         if (shiftToAssign == null) return
         val userMap = allUsers.associateBy { it.id }
 
@@ -143,8 +142,7 @@ class GreedyScheduleFiller(
         } // end forEach date
     } // end assignShiftTypeStrict
 
-
-    // ... (fillRemainingWithOffStrict 方法保持不變, 內部呼叫 checkAllHardRulesRealtime) ...
+    // fillRemainingWithOffStrict 方法保持不變, 內部呼叫 checkAllHardRulesRealtime
     private fun fillRemainingWithOffStrict(
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         allUsers: List<User>, dates: List<String>, offShift: ShiftType,
@@ -153,7 +151,7 @@ class GreedyScheduleFiller(
         remainingOffQuota: MutableMap<String, Int>,
         remainingWorkQuotasParam: Map<String, Map<String, Int>>,
         violations: MutableList<String>
-    ) {
+    ) { /* ... */
         val userMap = allUsers.associateBy { it.id }
         allUsers.forEach { user ->
             dates.forEach { date ->
@@ -189,12 +187,10 @@ class GreedyScheduleFiller(
         }
     }
 
-
-    // ... (countAssignedShifts 方法保持不變) ...
+    // countAssignedShifts 方法保持不變
     private fun countAssignedShifts(userId: String, shiftId: String, userAssignments: Map<String, Map<String, String>>): Int {
         return userAssignments[userId]?.values?.count { it == shiftId } ?: 0
     }
-
 
     /**
      * 即時檢查所有硬性規則 - 修改版本
@@ -204,10 +200,10 @@ class GreedyScheduleFiller(
         user: User,
         day: String,
         shiftIdToAssign: String,
-        currentAssignments: Map<String, Map<String, String>>, // 使用不可變 Map
+        currentAssignments: Map<String, out Map<String, String>>, // 使用不可變 Map
         localShiftTypes: List<ShiftType>,
         dbRules: List<SchedulingRuleData>
-    ): Boolean {
+    ): Boolean {/* ... */
         // 模擬 assignment
         val simulatedUserAssignments = currentAssignments[user.id]?.plus(day to shiftIdToAssign) ?: mapOf(day to shiftIdToAssign)
         val context = RuleContext(user, simulatedUserAssignments, localShiftTypes)
@@ -229,4 +225,3 @@ class GreedyScheduleFiller(
     }
 }
 // ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
-

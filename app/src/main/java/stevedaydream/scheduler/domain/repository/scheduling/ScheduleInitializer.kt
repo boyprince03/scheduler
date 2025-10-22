@@ -1,4 +1,4 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 新檔案開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
 import android.util.Log
@@ -6,6 +6,7 @@ import stevedaydream.scheduler.data.model.*
 import stevedaydream.scheduler.domain.scheduling.rules.RuleContext // 引入 RuleContext
 import stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule as SchedulingRuleInterface // 引入 SchedulingRule Interface
 import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData // 引入 SchedulingRule Data class
+import javax.inject.Inject // ✅ 引入 Inject
 import kotlin.math.floor
 
 /**
@@ -13,11 +14,11 @@ import kotlin.math.floor
  * - 計算配額
  * - 套用固定輪班、已核准休假、使用者偏好
  */
-class ScheduleInitializer(
+class ScheduleInitializer @Inject constructor( // ✅ 加入 @Inject constructor
     private val ruleEngine: RuleEngine // 注入 RuleEngine 以便檢查偏好
 ) {
 
-    // 初始化結果的資料結構
+    // InitializationResult data class 保持不變
     data class InitializationResult(
         val initialAssignments: MutableMap<String, MutableMap<String, String>>, // Map<UserId, Map<Day, ShiftId>>
         val remainingWorkQuotas: MutableMap<String, MutableMap<String, Int>>, // Map<UserId, Map<ShiftId, Count>>
@@ -64,15 +65,13 @@ class ScheduleInitializer(
         )
     }
 
-    // --- 從 ScheduleGenerator 搬移過來的輔助函式 ---
-
+    // --- 從 ScheduleGenerator 搬移過來的輔助函式 (保持不變) ---
     private fun calculateAllQuotas(
         manpowerPlan: ManpowerPlan,
         orderedUsers: List<User>,
         workShifts: List<ShiftType>,
         offShift: ShiftType,
-        daysInMonth: Int
-    ): Pair<Map<String, Map<String, Int>>, Map<String, Int>> {
+        daysInMonth: Int): Pair<Map<String, Map<String, Int>>, Map<String, Int>> { /* ... */
         val workQuotas = mutableMapOf<String, MutableMap<String, Int>>()
         orderedUsers.forEach { workQuotas[it.id] = mutableMapOf() }
         val offQuota = mutableMapOf<String, Int>()
@@ -102,13 +101,12 @@ class ScheduleInitializer(
         }
         return workQuotas.mapValues { it.value.toMap() } to offQuota.toMap()
     }
-
     private fun applyPreScheduledRotationsStrict(
         preScheduledRotations: Map<String, Map<String, String>>,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         remainingWorkQuotas: MutableMap<String, MutableMap<String, Int>>,
         violations: MutableList<String>
-    ) {
+    ) { /* ... */
         preScheduledRotations.forEach { (userId, dailyShifts) ->
             dailyShifts.forEach { (day, shiftId) ->
                 val existingAssignment = userAssignments[userId]?.get(day)
@@ -130,14 +128,13 @@ class ScheduleInitializer(
             }
         }
     }
-
     private fun applyApprovedLeavesStrict(
         requests: List<Request>,
         offShift: ShiftType,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
         remainingOffQuota: MutableMap<String, Int>,
         violations: MutableList<String>
-    ) {
+    ) {/* ... */
         requests.filter { it.status == "approved" && it.type == "leave" }
             .forEach { request ->
                 val day = request.date.split("-").last()
@@ -154,7 +151,6 @@ class ScheduleInitializer(
                 }
             }
     }
-
     private fun applyReservationsStrict(
         reservations: List<Reservation>,
         userAssignments: MutableMap<String, MutableMap<String, String>>,
@@ -164,7 +160,7 @@ class ScheduleInitializer(
         dbRules: List<SchedulingRuleData>,
         allUsers: List<User>, // 需要 allUsers 列表來查找 User 物件
         violations: MutableList<String> // Changed from violations to initialViolations
-    ) {
+    ) { /* ... */
         val offShiftId = localShiftTypes.find { it.shortCode == "OFF" }?.id ?: ""
         val shiftTypeMap = localShiftTypes.associateBy { it.id }
         val userMap = allUsers.associateBy { it.id } // 建立 User ID 到 User 物件的映射
@@ -211,20 +207,14 @@ class ScheduleInitializer(
             }
         }
     }
-
-
-    /**
-     * 即時檢查所有硬性規則 (從 ScheduleGenerator 搬過來)
-     * @param user 要檢查的 User 物件
-     */
     private fun checkAllHardRulesRealtime(
         user: User, // 改為接收 User 物件
         day: String,
         shiftIdToAssign: String,
-        currentAssignments: Map<String, Map<String, String>>,
+        currentAssignments: Map<String, out Map<String, String>>,
         localShiftTypes: List<ShiftType>,
         dbRules: List<SchedulingRuleData>
-    ): Boolean {
+    ): Boolean { /* ... */
         val simulatedUserAssignments = currentAssignments[user.id]?.plus(day to shiftIdToAssign) ?: mapOf(day to shiftIdToAssign)
         val context = RuleContext(user, simulatedUserAssignments, localShiftTypes)
 
@@ -242,4 +232,4 @@ class ScheduleInitializer(
         return true
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 新檔案結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲

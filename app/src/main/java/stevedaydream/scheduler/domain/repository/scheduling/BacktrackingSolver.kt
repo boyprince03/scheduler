@@ -1,4 +1,4 @@
-// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改開始 ▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼▼▼▼▼▼▼▼▼▼ 修改確認 ▼▼▼▼▼▼▼▼▼▼▼▼
 package stevedaydream.scheduler.domain.scheduling
 
 import android.util.Log
@@ -7,7 +7,7 @@ import stevedaydream.scheduler.domain.scheduling.rules.RuleContext
 import stevedaydream.scheduler.domain.scheduling.rules.RuleViolation
 import stevedaydream.scheduler.data.model.SchedulingRule as SchedulingRuleData
 import stevedaydream.scheduler.domain.scheduling.rules.SchedulingRule as SchedulingRuleInterface
-import javax.inject.Inject // ✅ 引入 Inject
+import javax.inject.Inject // ✅ 確認引入 Inject
 
 /**
  * BacktrackingSolver 的工廠介面
@@ -28,7 +28,7 @@ interface BacktrackingSolverFactory {
 /**
  * BacktrackingSolverFactory 的實作
  */
-class BacktrackingSolverFactoryImpl @Inject constructor() : BacktrackingSolverFactory {
+class BacktrackingSolverFactoryImpl @Inject constructor() : BacktrackingSolverFactory { // ✅ 確認有 @Inject constructor()
     override fun create(
         users: List<User>,
         numDays: Int,
@@ -59,6 +59,7 @@ class BacktrackingSolver(
     private val dbRules: List<SchedulingRuleData>,
     private val ruleEngine: RuleEngine
 ) {
+    // ... (BacktrackingSolver 的其餘內容不變) ...
     private val TAG = "BacktrackingSolver"
     private val EMPTY = "."
     private val schedule: MutableMap<String, MutableMap<String, String>> = initialSchedule.mapValues { it.value.toMutableMap() }.toMutableMap()
@@ -158,4 +159,4 @@ class BacktrackingSolver(
         }
     }
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改結束 ▲▲▲▲▲▲▲▲▲▲▲▲
+// ▲▲▲▲▲▲▲▲▲▲▲▲ 修改確認 ▲▲▲▲▲▲▲▲▲▲▲▲
