@@ -27,9 +27,10 @@ data class Quadruple<A, B, C, D>(
 
 // ... (Enums and MemberListUiState data class remain the same) ...
 enum class SortOption(val displayName: String) {
+    CUSTOM("自訂排序"),
     NAME("姓名筆畫"),
     GROUP("所屬群組"),
-    CUSTOM("自訂排序")
+
 }
 data class MemberWithGroupInfo(
     val user: User,
